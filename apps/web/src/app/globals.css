@@ -1,0 +1,15 @@
+@import "tailwindcss";
+
+:root {
+  --msh-navy: #0f2744;
+  --msh-gold: #c9a227;
+  --msh-sky: #4a90a4;
+  --msh-cream: #f7f5f0;
+  --msh-slate: #64748b;
+}
+
+body {
+  background: var(--msh-cream);
+  color: #1e293b;
+  font-family: "Segoe UI", system-ui, sans-serif;
+}

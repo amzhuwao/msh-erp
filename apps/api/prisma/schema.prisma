@@ -201,6 +201,27 @@ model RoomType {
   @@map("room_types")
 }
 
+enum AssignmentStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+}
+
+model HousekeepingAssignment {
+  id                String           @id @default(cuid())
+  date              DateTime         @db.Date
+  roomId            String
+  room              Room             @relation(fields: [roomId], references: [id])
+  attendantUserId   String
+  status            AssignmentStatus @default(PENDING)
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  @@unique([date, roomId])
+  @@index([attendantUserId])
+  @@map("housekeeping_assignments")
+}
+
 model Room {
   id           String        @id @default(cuid())
   number       String        @unique
@@ -210,6 +231,7 @@ model Room {
   status       RoomStatus    @default(INSPECTED)
   isActive     Boolean       @default(true)
   reservations Reservation[]
+  assignments  HousekeepingAssignment[]
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
 

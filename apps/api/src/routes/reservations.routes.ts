@@ -11,6 +11,7 @@ import {
   createReservation,
   searchAvailability,
 } from "../services/reservation.service.js";
+import { checkOutReservation } from "../services/folio.service.js";
 
 export const reservationsRouter = Router();
 
@@ -144,6 +145,19 @@ reservationsRouter.post(
     const reservation = await checkInReservation({
       reservationId: paramId(req.params.id),
       ...body,
+      userId: req.user!.id,
+      ipAddress: getClientIp(req),
+    });
+    res.json(reservation);
+  }),
+);
+
+reservationsRouter.post(
+  "/:id/checkout",
+  authorize("Reservations", "EDIT"),
+  asyncHandler(async (req, res) => {
+    const reservation = await checkOutReservation({
+      reservationId: paramId(req.params.id),
       userId: req.user!.id,
       ipAddress: getClientIp(req),
     });

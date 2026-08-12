@@ -5,7 +5,11 @@
   "description": "MSH Hotel ERP — Property Management System",
   "scripts": {
     "dev": "npm run dev --workspace=apps/api",
-    "build": "npm run build --workspace=apps/api",
+    "dev:web": "npm run dev --workspace=apps/web",
+    "dev:all": "npm run dev --workspace=apps/api & npm run dev --workspace=apps/web",
+    "build": "npm run build --workspace=apps/api && npm run build --workspace=apps/web",
+    "build:api": "npm run build --workspace=apps/api",
+    "build:web": "npm run build --workspace=apps/web",
     "start": "npm run start --workspace=apps/api",
     "db:generate": "npm run db:generate --workspace=apps/api",
     "db:migrate": "npm run db:migrate --workspace=apps/api",

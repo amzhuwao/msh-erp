@@ -2,107 +2,95 @@
 
 Property Management System for **Manica Skyview Hotel**, Mutare, Zimbabwe.
 
-## Live API (droplet)
+## Live application
 
-- Base URL: `https://209.38.225.150/msh-erp`
-- Property info: `GET /api/property`
-- Health: `GET /api/health`
+| Service | URL |
+|---------|-----|
+| **Web UI** | https://209.38.225.150/msh/login |
+| **API** | https://209.38.225.150/msh-erp |
 
-### Default users (change after first login)
+### Default users
 
 | Username | Password | Role |
 |----------|----------|------|
 | `admin` | `Admin@MSH2026!` | System Administrator |
 | `reception` | `Reception@MSH2026!` | Receptionist |
 | `fosupervisor` | `Supervisor@MSH2026!` | Front Office Supervisor |
+| `housekeeping` | `Housekeeping@MSH2026!` | Housekeeping Supervisor |
 
-### Quick start
+## Features
 
-```bash
-# Login
-curl -sk -X POST https://209.38.225.150/msh-erp/api/auth/login \
-  -H 'Content-Type: application/json' \
-  -d '{"username":"reception","password":"Reception@MSH2026!"}'
+### Front Office UI (`apps/web`)
+- **Tape chart** — 14-day room grid with reservation blocks
+- **Arrivals** — today's expected arrivals with check-in flow
+- **Departures** — folio balance + check-out
+- **In-house** — searchable guest list
+- **Availability search** — room type availability by date
+- **Folio panel** — post charges and payments
+- **Night audit** — no-shows, room charge posting
 
-# Use token for authenticated requests
-curl -sk https://209.38.225.150/msh-erp/api/property/dashboard \
-  -H "Authorization: Bearer <token>"
-```
+### Housekeeping UI
+- Room status grid with cleaning workflow (Dirty → Cleaning → Clean → Inspected)
+- Status filters and per-room action buttons
 
-## Implemented modules (Phase 1)
-
-| Module | Status | Features |
-|--------|--------|----------|
-| **17 — Auth & RBAC** | ✅ | Login, JWT, role permissions, audit log |
-| **18 — Property config** | ✅ | Hotel profile, tax rates, doc numbering |
-| **3 — Rooms** | ✅ | 30 rooms, 4 room types, status tracking |
-| **1 — Reservations** | ✅ | Guests, availability, booking, check-in, cancel |
-| **14 — Rate plans** | ✅ | BAR rate plans per room type |
+### API modules
+- Module 17: Auth & RBAC
+- Module 18: Property configuration
+- Module 1: Reservations, guests, check-in/out, folios
+- Module 3: Housekeeping status workflow
+- Module 14: Rate plans
 
 ## API endpoints
 
-### Auth
-- `POST /api/auth/login`
-- `GET /api/auth/me`
-
-### Property & dashboard
-- `GET /api/property`
-- `GET /api/property/dashboard`
-
-### Guests
-- `GET /api/guests`
-- `POST /api/guests`
-- `GET /api/guests/:id`
-- `PUT /api/guests/:id`
-
-### Reservations
-- `GET /api/reservations/availability?checkIn=&checkOut=&adults=`
-- `GET /api/reservations`
-- `POST /api/reservations`
-- `GET /api/reservations/:id`
-- `POST /api/reservations/:id/checkin`
-- `POST /api/reservations/:id/cancel`
-
-### Rooms
-- `GET /api/rooms`
-- `GET /api/rooms/types`
+```
+POST /api/auth/login
+GET  /api/front-office/tape-chart?days=14
+GET  /api/front-office/arrivals
+GET  /api/front-office/departures
+GET  /api/front-office/in-house
+GET  /api/reservations/availability
+POST /api/reservations
+POST /api/reservations/:id/checkin
+POST /api/reservations/:id/checkout
+POST /api/reservations/:id/cancel
+GET  /api/folios/:id
+POST /api/folios/:id/charges
+POST /api/folios/:id/payments
+GET  /api/housekeeping/dashboard
+PUT  /api/housekeeping/rooms/:id/status
+POST /api/night-audit/run
+```
 
 ## Development
 
-Specs for all 20 modules are in `erp-dev-plan/`.
+Specs for all 20 modules: `erp-dev-plan/`
 
 ```bash
 cp .env.example apps/api/.env
-docker compose up -d postgres   # or use native PostgreSQL
 npm install
-npm run db:generate
-npm run db:push
-npm run db:seed
-npm run dev
+npm run db:generate && npm run db:push && npm run db:seed
+npm run dev          # API on :3000
+npm run dev:web      # Web on :3004
 ```
 
 ## Project structure
 
 ```
-apps/api/           Express + TypeScript + Prisma API
-  prisma/schema.prisma
-  prisma/seed.ts    Manica Skyview seed data
-  src/routes/       REST endpoints
-  src/services/     Business logic
-  src/middleware/   Auth & validation
-erp-dev-plan/       Module implementation guides (20 modules)
-deploy/             nginx + systemd configs
-scripts/            Droplet bootstrap
+apps/api/     Express + Prisma backend
+apps/web/     Next.js front office UI
+erp-dev-plan/ Module specs (20 modules)
+deploy/       nginx + systemd
+scripts/      Bootstrap & nginx setup
 ```
 
-## Droplet development
+## Droplet
 
-SSH: `mshdev@209.38.225.150` → open `/opt/msh-erp`
+SSH: `mshdev@209.38.225.150` → `/opt/msh-erp`
 
 ```bash
-npm run dev          # port from apps/api/.env (3003 on droplet)
 pm2 logs msh-erp-api
-pm2 restart msh-erp-api
+pm2 logs msh-erp-web
+pm2 restart all
 ```
 
-**Important:** Do not overwrite `/opt/msh-erp/apps/api/.env` when deploying.
+**Important:** Never overwrite `/opt/msh-erp/apps/api/.env` on deploy.
