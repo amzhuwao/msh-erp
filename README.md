@@ -25,11 +25,13 @@ bash scripts/droplet-bootstrap.sh
 
 The script installs Node 20, Docker, PostgreSQL (via Docker Compose), configures nginx, and starts the API as a systemd service.
 
-Verify:
+Verify (use HTTPS — port 80 redirects on this droplet):
 
 ```bash
-curl http://209.38.225.150/api/health
+curl -sk https://209.38.225.150/msh-erp/api/health
 ```
+
+On shared droplets with existing apps (efundo, ajira), MSH ERP runs on **port 3003** behind the `/msh-erp/` nginx path.
 
 ### 2. Connect Cursor via Remote SSH
 
