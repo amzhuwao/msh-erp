@@ -1,0 +1,7 @@
+Host msh-erp-droplet
+    HostName 209.38.225.150
+    User mshdev
+    IdentityFile ~/.ssh/id_ed25519
+    ForwardAgent yes
+    ServerAliveInterval 60
+    ServerAliveCountMax 3

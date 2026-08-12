@@ -1,0 +1,92 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Module 17 — User, Role & Access Management (foundation)
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  firstName    String
+  lastName     String
+  isActive     Boolean  @default(true)
+  roleId       String
+  role         Role     @relation(fields: [roleId], references: [id])
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([roleId])
+  @@map("users")
+}
+
+model Role {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  permissions Json
+  users       User[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("roles")
+}
+
+// Module 1 — Reservations & Front Office (starter schema)
+enum ReservationStatus {
+  TENTATIVE
+  CONFIRMED
+  CHECKED_IN
+  CHECKED_OUT
+  CANCELLED
+  NO_SHOW
+}
+
+enum VipStatus {
+  NONE
+  VIP1
+  VIP2
+  VIP3
+}
+
+model Guest {
+  id             String        @id @default(cuid())
+  firstName      String
+  lastName       String
+  email          String        @unique
+  phone          String?
+  nationality    String?
+  nationalId     String?
+  passportNumber String?
+  vipStatus      VipStatus     @default(NONE)
+  notes          String?
+  reservations   Reservation[]
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@map("guests")
+}
+
+model Reservation {
+  id                String            @id @default(cuid())
+  reservationNumber String            @unique
+  guestId           String
+  guest             Guest             @relation(fields: [guestId], references: [id])
+  checkInDate       DateTime          @db.Date
+  checkOutDate      DateTime          @db.Date
+  adults            Int               @default(1)
+  children          Int               @default(0)
+  status            ReservationStatus @default(TENTATIVE)
+  specialRequests   String?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  @@index([guestId])
+  @@index([status])
+  @@index([checkInDate, checkOutDate])
+  @@map("reservations")
+}

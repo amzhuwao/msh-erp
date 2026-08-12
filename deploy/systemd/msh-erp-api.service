@@ -1,0 +1,17 @@
+[Unit]
+Description=MSH ERP API
+After=network.target docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=mshdev
+Group=mshdev
+WorkingDirectory=/opt/msh-erp
+EnvironmentFile=/opt/msh-erp/apps/api/.env
+ExecStart=/usr/bin/npm run start
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
