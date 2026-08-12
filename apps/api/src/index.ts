@@ -7,11 +7,13 @@ import { authRouter } from "./routes/auth.routes.js";
 import { corporateRouter } from "./routes/corporate.routes.js";
 import { frontOfficeRouter } from "./routes/front-office.routes.js";
 import { foliosRouter } from "./routes/folios.routes.js";
+import { financeRouter } from "./routes/finance.routes.js";
 import { groupReservationsRouter } from "./routes/group-reservations.routes.js";
 import { guestsRouter } from "./routes/guests.routes.js";
 import { healthRouter } from "./routes/health.js";
 import { housekeepingRouter } from "./routes/housekeeping.routes.js";
 import { nightAuditRouter } from "./routes/night-audit.routes.js";
+import { posRouter } from "./routes/pos.routes.js";
 import { propertyRouter } from "./routes/property.routes.js";
 import { reservationsRouter } from "./routes/reservations.routes.js";
 import { roomsRouter } from "./routes/rooms.routes.js";
@@ -28,8 +30,8 @@ app.get("/", (_req, res) => {
   res.json({
     name: "Manica Skyview Hotel ERP",
     property: "Manica Skyview Hotel",
-    version: "0.3.0",
-    modules: ["Auth", "Reservations", "GroupReservations", "Rooms", "Property", "Housekeeping", "Folio"],
+    version: "0.4.0",
+    modules: ["Auth", "Reservations", "GroupReservations", "Rooms", "Property", "Housekeeping", "Folio", "POS", "Finance"],
   });
 });
 
@@ -45,6 +47,8 @@ app.use("/api/front-office", frontOfficeRouter);
 app.use("/api/folios", foliosRouter);
 app.use("/api/housekeeping", housekeepingRouter);
 app.use("/api/night-audit", nightAuditRouter);
+app.use("/api/pos", posRouter);
+app.use("/api/finance", financeRouter);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

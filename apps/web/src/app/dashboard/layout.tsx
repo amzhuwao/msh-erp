@@ -9,6 +9,8 @@ const nav = [
   { href: "/dashboard", label: "Front Office" },
   { href: "/dashboard/groups", label: "Group Reservations" },
   { href: "/dashboard/housekeeping", label: "Housekeeping" },
+  { href: "/dashboard/pos", label: "Restaurant POS" },
+  { href: "/dashboard/finance", label: "Finance" },
   { href: "/dashboard/night-audit", label: "Night Audit" },
 ];
 
@@ -38,7 +40,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               key={item.href}
               href={item.href}
               className={`block px-5 py-3 text-sm transition ${
-                pathname === item.href
+                pathname === item.href || pathname.startsWith(`${item.href}/`)
                   ? "bg-white/10 text-[#c9a227] border-r-2 border-[#c9a227]"
                   : "text-slate-300 hover:bg-white/5 hover:text-white"
               }`}

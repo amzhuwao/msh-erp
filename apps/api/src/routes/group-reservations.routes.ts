@@ -7,6 +7,8 @@ import {
   addGroupGuest,
   allocateGroupRoom,
   checkGroupAvailability,
+  checkInAllGroupGuests,
+  checkInGroupGuest,
   confirmGroupReservation,
   createGroupReservation,
   getGroupDashboard,
@@ -184,6 +186,38 @@ groupReservationsRouter.post(
     const result = await importRoomingList({
       groupId: paramId(req.params.id),
       rows: body.rows,
+      userId: req.user!.id,
+      ipAddress: getClientIp(req),
+    });
+    res.json(result);
+  }),
+);
+
+groupReservationsRouter.post(
+  "/:id/checkin-guest/:guestId",
+  authorize("GroupReservations", "EDIT"),
+  asyncHandler(async (req, res) => {
+    const body = validateBody(
+      z.object({ roomId: z.string().optional() }),
+      req,
+    );
+    const result = await checkInGroupGuest({
+      groupId: paramId(req.params.id),
+      guestId: paramId(req.params.guestId),
+      roomId: body.roomId,
+      userId: req.user!.id,
+      ipAddress: getClientIp(req),
+    });
+    res.json(result);
+  }),
+);
+
+groupReservationsRouter.post(
+  "/:id/checkin-all",
+  authorize("GroupReservations", "EDIT"),
+  asyncHandler(async (req, res) => {
+    const result = await checkInAllGroupGuests({
+      groupId: paramId(req.params.id),
       userId: req.user!.id,
       ipAddress: getClientIp(req),
     });
