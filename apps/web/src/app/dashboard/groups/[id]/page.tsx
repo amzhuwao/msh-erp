@@ -20,8 +20,26 @@ interface GroupDetail {
   specialRequests: string | null;
   depositAmount: string;
   company: { companyName: string } | null;
-  guests: { id: string; fullName: string; nationality: string | null; roomTypeCode: string | null; checkInStatus: string }[];
-  roomAllocations: { id: string; room: { number: string }; roomType: { code: string }; rate: string; assignedGuestName: string | null; status: string }[];
+  guests: {
+    id: string;
+    fullName: string;
+    nationality: string | null;
+    roomTypeCode: string | null;
+    roomNumber: string | null;
+    checkInStatus: string;
+    nationalId: string | null;
+    passportNumber: string | null;
+  }[];
+  roomAllocations: {
+    id: string;
+    roomId: string;
+    room: { number: string; id: string };
+    roomType: { code: string };
+    rate: string;
+    assignedGuestName: string | null;
+    status: string;
+  }[];
+  reservations: { id: string; reservationNumber: string; guest: { firstName: string; lastName: string }; room: { number: string } | null }[];
 }
 
 interface Room {
@@ -38,6 +56,8 @@ export default function GroupDetailPage() {
   const [selectedRoom, setSelectedRoom] = useState("");
   const [importText, setImportText] = useState("");
   const [newGuestName, setNewGuestName] = useState("");
+  const [checkingIn, setCheckingIn] = useState<string | null>(null);
+  const [bulkCheckingIn, setBulkCheckingIn] = useState(false);
 
   function load() {
     apiFetch<GroupDetail>(`/api/group-reservations/${id}`).then(setGroup);
@@ -91,9 +111,45 @@ export default function GroupDetailPage() {
     load();
   }
 
+  async function checkInGuest(guestId: string, roomId?: string) {
+    setCheckingIn(guestId);
+    try {
+      await apiFetch(`/api/group-reservations/${id}/checkin-guest/${guestId}`, {
+        method: "POST",
+        body: JSON.stringify(roomId ? { roomId } : {}),
+      });
+      load();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Check-in failed");
+    } finally {
+      setCheckingIn(null);
+    }
+  }
+
+  async function checkInAll() {
+    if (!confirm("Check in all pending guests?")) return;
+    setBulkCheckingIn(true);
+    try {
+      const result = await apiFetch<{ succeeded: number; failed: number; results: { fullName: string; success: boolean; error?: string }[] }>(
+        `/api/group-reservations/${id}/checkin-all`,
+        { method: "POST" },
+      );
+      alert(`Checked in ${result.succeeded} of ${result.succeeded + result.failed} guests`);
+      if (result.failed > 0) {
+        const failed = result.results.filter((r) => !r.success).map((r) => `${r.fullName}: ${r.error}`).join("\n");
+        console.warn(failed);
+      }
+      load();
+    } finally {
+      setBulkCheckingIn(false);
+    }
+  }
+
   if (!group) return <div className="p-6 text-slate-500">Loading…</div>;
 
   const allocatedIds = new Set(group.roomAllocations.map((a) => a.room.number));
+  const pendingGuests = group.guests.filter((g) => g.checkInStatus === "PENDING");
+  const canCheckIn = group.status === "CONFIRMED" && group.roomAllocations.length > 0;
 
   return (
     <div className="p-6">
@@ -114,6 +170,15 @@ export default function GroupDetailPage() {
           {group.status === "TENTATIVE" && (
             <button onClick={confirmGroup} className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm">
               Confirm Booking
+            </button>
+          )}
+          {canCheckIn && pendingGuests.length > 0 && (
+            <button
+              onClick={checkInAll}
+              disabled={bulkCheckingIn}
+              className="bg-[#4a90a4] text-white px-4 py-2 rounded-lg text-sm disabled:opacity-50"
+            >
+              {bulkCheckingIn ? "Checking in…" : `Check In All (${pendingGuests.length})`}
             </button>
           )}
           <span className={`px-3 py-2 rounded-lg text-sm font-medium ${
@@ -143,7 +208,10 @@ export default function GroupDetailPage() {
           <ul className="space-y-2 text-sm">
             {group.roomAllocations.map((a) => (
               <li key={a.id} className="flex justify-between border-b border-slate-100 py-2">
-                <span>Room <strong>{a.room.number}</strong> ({a.roomType.code})</span>
+                <span>
+                  Room <strong>{a.room.number}</strong> ({a.roomType.code})
+                  {a.assignedGuestName && <span className="text-slate-400 ml-2">→ {a.assignedGuestName}</span>}
+                </span>
                 <span className="text-slate-500">${Number(a.rate).toFixed(2)}/night · {a.status}</span>
               </li>
             ))}
@@ -162,16 +230,48 @@ export default function GroupDetailPage() {
             />
             <button onClick={addGuest} className="bg-[#0f2744] text-white px-4 py-2 rounded-lg text-sm">Add</button>
           </div>
-          <ul className="space-y-1 text-sm max-h-48 overflow-y-auto">
+          <ul className="space-y-2 text-sm max-h-64 overflow-y-auto">
             {group.guests.map((g) => (
-              <li key={g.id} className="flex justify-between py-1.5 border-b border-slate-50">
-                <span>{g.fullName}</span>
-                <span className="text-slate-400 text-xs">{g.roomTypeCode ?? "—"} · {g.checkInStatus}</span>
+              <li key={g.id} className="flex items-center justify-between py-2 border-b border-slate-50">
+                <div>
+                  <span className="font-medium">{g.fullName}</span>
+                  <div className="text-xs text-slate-400">
+                    {g.roomTypeCode ?? "—"} · {g.checkInStatus}
+                    {g.roomNumber && ` · Room ${g.roomNumber}`}
+                  </div>
+                </div>
+                {canCheckIn && g.checkInStatus === "PENDING" && (
+                  <button
+                    onClick={() => checkInGuest(g.id)}
+                    disabled={checkingIn === g.id || !(g.nationalId || g.passportNumber)}
+                    title={!(g.nationalId || g.passportNumber) ? "National ID or passport required" : undefined}
+                    className="text-xs bg-emerald-600 text-white px-3 py-1.5 rounded disabled:opacity-40"
+                  >
+                    {checkingIn === g.id ? "…" : "Check In"}
+                  </button>
+                )}
+                {g.checkInStatus === "CHECKED_IN" && (
+                  <span className="text-xs text-emerald-600 font-medium">Checked In</span>
+                )}
               </li>
             ))}
           </ul>
         </section>
       </div>
+
+      {group.reservations.length > 0 && (
+        <section className="bg-white rounded-xl border border-slate-200 p-4 mt-6">
+          <h2 className="font-semibold text-[#0f2744] mb-3">Individual Reservations</h2>
+          <ul className="space-y-1 text-sm">
+            {group.reservations.map((r) => (
+              <li key={r.id} className="flex justify-between py-1.5 border-b border-slate-50">
+                <span>{r.reservationNumber} — {r.guest.firstName} {r.guest.lastName}</span>
+                <span className="text-slate-400">Room {r.room?.number ?? "—"}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <section className="bg-white rounded-xl border border-slate-200 p-4 mt-6">
         <h2 className="font-semibold text-[#0f2744] mb-2">Import Rooming List (CSV)</h2>

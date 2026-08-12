@@ -1,8 +1,78 @@
-import { GroupReservationStatus, GroupRoomAllocationStatus } from "@prisma/client";
+import { GroupReservationStatus, GroupRoomAllocationStatus, ReservationStatus, RoomStatus } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { AppError } from "../lib/errors.js";
 import { nextDocumentNumber, writeAuditLog } from "./system.service.js";
 import { checkRoomOverlap } from "./reservation.service.js";
+
+function splitFullName(fullName: string): { firstName: string; lastName: string } {
+  const parts = fullName.trim().split(/\s+/);
+  if (parts.length === 1) {
+    return { firstName: parts[0]!, lastName: "Guest" };
+  }
+  return { firstName: parts[0]!, lastName: parts.slice(1).join(" ") };
+}
+
+function guestEmailFromGroup(groupCode: string, guestId: string): string {
+  const slug = groupCode.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  return `${slug}-${guestId.slice(-8)}@group.msh.local`;
+}
+
+async function resolveGroupGuestRoom(
+  groupId: string,
+  guest: { id: string; fullName: string; roomTypeCode: string | null },
+  roomIdOverride?: string,
+) {
+  const allocations = await prisma.groupRoom.findMany({
+    where: { groupReservationId: groupId },
+    include: { room: true, roomType: true },
+  });
+
+  if (allocations.length === 0) {
+    throw new AppError(400, "GRP-010", "No rooms allocated for this group");
+  }
+
+  const checkedInGuests = await prisma.groupGuest.findMany({
+    where: {
+      groupReservationId: groupId,
+      checkInStatus: "CHECKED_IN",
+      id: { not: guest.id },
+    },
+    select: { roomNumber: true },
+  });
+  const usedRoomNumbers = new Set(checkedInGuests.map((g) => g.roomNumber).filter(Boolean));
+
+  if (roomIdOverride) {
+    const allocation = allocations.find((a) => a.roomId === roomIdOverride);
+    if (!allocation) {
+      throw new AppError(400, "GRP-011", "Selected room is not allocated to this group");
+    }
+    if (usedRoomNumbers.has(allocation.room.number)) {
+      throw new AppError(409, "GRP-012", "Room is already assigned to another checked-in guest");
+    }
+    return allocation;
+  }
+
+  const byName = allocations.find(
+    (a) =>
+      a.assignedGuestName?.toLowerCase() === guest.fullName.toLowerCase() &&
+      !usedRoomNumbers.has(a.room.number),
+  );
+  if (byName) return byName;
+
+  if (guest.roomTypeCode) {
+    const byType = allocations.find(
+      (a) =>
+        a.roomType.code === guest.roomTypeCode &&
+        !usedRoomNumbers.has(a.room.number),
+    );
+    if (byType) return byType;
+  }
+
+  const available = allocations.find((a) => !usedRoomNumbers.has(a.room.number));
+  if (available) return available;
+
+  throw new AppError(409, "GRP-013", "No available room allocation for this guest");
+}
 
 function toDateOnly(value: string | Date): Date {
   const date = value instanceof Date ? value : new Date(value);
@@ -428,5 +498,222 @@ export async function checkGroupAvailability(
     totalAvailable,
     sufficient: totalAvailable >= roomCount,
     byRoomType: availableByType,
+  };
+}
+
+export async function checkInGroupGuest(input: {
+  groupId: string;
+  guestId: string;
+  roomId?: string;
+  userId: string;
+  ipAddress?: string;
+}) {
+  const group = await prisma.groupReservation.findUnique({
+    where: { id: input.groupId },
+    include: {
+      guests: { where: { id: input.guestId } },
+      roomAllocations: { include: { room: true, roomType: true } },
+    },
+  });
+
+  if (!group) {
+    throw new AppError(404, "GRP-001", "Group reservation not found");
+  }
+  if (group.status !== GroupReservationStatus.CONFIRMED) {
+    throw new AppError(400, "GRP-014", "Group must be confirmed before check-in");
+  }
+
+  const groupGuest = group.guests[0];
+  if (!groupGuest) {
+    throw new AppError(404, "GRP-015", "Group guest not found");
+  }
+  if (groupGuest.checkInStatus !== "PENDING") {
+    throw new AppError(400, "GRP-016", "Guest is already checked in or checked out");
+  }
+
+  const hasId = groupGuest.nationalId || groupGuest.passportNumber;
+  if (!hasId) {
+    throw new AppError(400, "GRP-017", "National ID or passport required before check-in");
+  }
+
+  const allocation = await resolveGroupGuestRoom(
+    input.groupId,
+    groupGuest,
+    input.roomId,
+  );
+
+  const room = allocation.room;
+  if (room.status !== RoomStatus.INSPECTED) {
+    throw new AppError(400, "GRP-018", "Room must be INSPECTED before check-in");
+  }
+
+  await checkRoomOverlap(room.id, group.arrivalDate, group.departureDate);
+
+  const ratePlan = await prisma.ratePlan.findFirst({
+    where: { roomTypeId: allocation.roomTypeId, isActive: true },
+  });
+  if (!ratePlan) {
+    throw new AppError(404, "GRP-019", "No active rate plan for room type");
+  }
+
+  const reservationNumber = await nextDocumentNumber("RESERVATIONS");
+  const { firstName, lastName } = splitFullName(groupGuest.fullName);
+  const email = guestEmailFromGroup(group.groupCode, groupGuest.id);
+
+  const result = await prisma.$transaction(async (tx) => {
+    const guest = await tx.guest.create({
+      data: {
+        firstName,
+        lastName,
+        email,
+        nationality: groupGuest.nationality,
+        nationalId: groupGuest.nationalId,
+        passportNumber: groupGuest.passportNumber,
+        vipStatus: groupGuest.vipStatus,
+        notes: groupGuest.notes,
+      },
+    });
+
+    const reservation = await tx.reservation.create({
+      data: {
+        reservationNumber,
+        guestId: guest.id,
+        ratePlanId: ratePlan.id,
+        roomId: room.id,
+        checkInDate: group.arrivalDate,
+        checkOutDate: group.departureDate,
+        adults: 1,
+        children: 0,
+        status: ReservationStatus.CHECKED_IN,
+        groupReservationId: group.id,
+        createdById: input.userId,
+      },
+      include: {
+        guest: true,
+        room: { include: { roomType: true } },
+        ratePlan: true,
+      },
+    });
+
+    await tx.reservationStatusHistory.create({
+      data: {
+        reservationId: reservation.id,
+        oldStatus: null,
+        newStatus: ReservationStatus.CHECKED_IN,
+        changedById: input.userId,
+        changeReason: "Group guest checked in",
+      },
+    });
+
+    await tx.folio.create({
+      data: { reservationId: reservation.id, guestId: guest.id },
+    });
+
+    await tx.room.update({
+      where: { id: room.id },
+      data: { status: RoomStatus.OCCUPIED },
+    });
+
+    await tx.groupGuest.update({
+      where: { id: groupGuest.id },
+      data: {
+        reservationId: reservation.id,
+        roomNumber: room.number,
+        checkInStatus: "CHECKED_IN",
+      },
+    });
+
+    await tx.groupRoom.update({
+      where: { id: allocation.id },
+      data: {
+        status: GroupRoomAllocationStatus.ALLOCATED,
+        assignedGuestName: groupGuest.fullName,
+      },
+    });
+
+    return { reservation, guest, roomNumber: room.number };
+  });
+
+  await writeAuditLog({
+    userId: input.userId,
+    module: "GroupReservations",
+    action: "GROUP_GUEST_CHECKIN",
+    entityType: "GroupGuest",
+    entityId: groupGuest.id,
+    details: {
+      reservationNumber,
+      roomNumber: result.roomNumber,
+      guestName: groupGuest.fullName,
+    },
+    ipAddress: input.ipAddress,
+  });
+
+  return result;
+}
+
+export async function checkInAllGroupGuests(input: {
+  groupId: string;
+  userId: string;
+  ipAddress?: string;
+}) {
+  const group = await prisma.groupReservation.findUnique({
+    where: { id: input.groupId },
+    include: { guests: true },
+  });
+
+  if (!group) {
+    throw new AppError(404, "GRP-001", "Group reservation not found");
+  }
+  if (group.status !== GroupReservationStatus.CONFIRMED) {
+    throw new AppError(400, "GRP-014", "Group must be confirmed before check-in");
+  }
+
+  const pending = group.guests.filter((g) => g.checkInStatus === "PENDING");
+  const results: { guestId: string; fullName: string; success: boolean; error?: string; reservationId?: string }[] = [];
+
+  for (const guest of pending) {
+    try {
+      const result = await checkInGroupGuest({
+        groupId: input.groupId,
+        guestId: guest.id,
+        userId: input.userId,
+        ipAddress: input.ipAddress,
+      });
+      results.push({
+        guestId: guest.id,
+        fullName: guest.fullName,
+        success: true,
+        reservationId: result.reservation.id,
+      });
+    } catch (error) {
+      const message = error instanceof AppError ? error.message : "Check-in failed";
+      results.push({
+        guestId: guest.id,
+        fullName: guest.fullName,
+        success: false,
+        error: message,
+      });
+    }
+  }
+
+  await writeAuditLog({
+    userId: input.userId,
+    module: "GroupReservations",
+    action: "GROUP_BULK_CHECKIN",
+    entityType: "GroupReservation",
+    entityId: input.groupId,
+    details: {
+      total: pending.length,
+      succeeded: results.filter((r) => r.success).length,
+      failed: results.filter((r) => !r.success).length,
+    },
+    ipAddress: input.ipAddress,
+  });
+
+  return {
+    total: pending.length,
+    succeeded: results.filter((r) => r.success).length,
+    failed: results.filter((r) => !r.success).length,
+    results,
   };
 }

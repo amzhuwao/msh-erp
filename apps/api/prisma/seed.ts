@@ -11,6 +11,7 @@ const receptionistPermissions = {
   Reservations: ["VIEW", "CREATE", "EDIT", "CANCEL"],
   GroupReservations: ["VIEW", "CREATE", "EDIT"],
   Housekeeping: ["VIEW"],
+  POS: ["VIEW", "CREATE"],
   Finance: ["VIEW_LIMITED"],
 };
 
@@ -19,6 +20,7 @@ const supervisorPermissions = {
   Reservations: ["VIEW", "CREATE", "EDIT", "CANCEL", "OVERRIDE"],
   GroupReservations: ["VIEW", "CREATE", "EDIT", "CANCEL"],
   Housekeeping: ["VIEW", "EDIT"],
+  POS: ["VIEW", "CREATE", "EDIT"],
   Finance: ["VIEW"],
 };
 
@@ -27,6 +29,7 @@ const adminPermissions = {
   Reservations: ["VIEW", "CREATE", "EDIT", "DELETE", "CANCEL", "OVERRIDE", "EXPORT"],
   GroupReservations: ["VIEW", "CREATE", "EDIT", "DELETE", "CANCEL", "OVERRIDE", "EXPORT"],
   Housekeeping: ["VIEW", "CREATE", "EDIT", "DELETE", "APPROVE"],
+  POS: ["VIEW", "CREATE", "EDIT", "DELETE", "APPROVE"],
   Finance: ["VIEW", "CREATE", "EDIT", "APPROVE", "EXPORT"],
   Admin: ["VIEW", "CREATE", "EDIT", "DELETE"],
 };
@@ -35,6 +38,15 @@ async function main() {
   console.log("Seeding Manica Skyview Hotel ERP...");
 
   await prisma.housekeepingAssignment.deleteMany();
+  await prisma.posOrderItem.deleteMany();
+  await prisma.posOrder.deleteMany();
+  await prisma.posSession.deleteMany();
+  await prisma.menuItem.deleteMany();
+  await prisma.posOutlet.deleteMany();
+  await prisma.generalLedgerLine.deleteMany();
+  await prisma.generalLedgerEntry.deleteMany();
+  await prisma.accountingPeriod.deleteMany();
+  await prisma.chartOfAccount.deleteMany();
   await prisma.groupCharge.deleteMany();
   await prisma.groupInvoice.deleteMany();
   await prisma.groupGuest.deleteMany();
@@ -97,6 +109,24 @@ async function main() {
       prefix: "MSV-GRP-2026-",
       currentSequence: 1,
       paddingDigits: 4,
+    },
+  });
+
+  await prisma.documentNumberingPattern.create({
+    data: {
+      module: DocumentModule.POS_ORDERS,
+      prefix: "POS-2026-",
+      currentSequence: 1,
+      paddingDigits: 6,
+    },
+  });
+
+  await prisma.documentNumberingPattern.create({
+    data: {
+      module: DocumentModule.GL_ENTRIES,
+      prefix: "GL-2026-",
+      currentSequence: 1,
+      paddingDigits: 6,
     },
   });
 
@@ -272,7 +302,14 @@ async function main() {
   // Sample tentative group booking
   const adminUser = await prisma.user.findUnique({ where: { username: "admin" } });
   if (adminUser) {
-    await prisma.groupReservation.create({
+    const stdRooms = await prisma.room.findMany({
+      where: { roomType: { code: "STD" } },
+      take: 3,
+      orderBy: { number: "asc" },
+    });
+    const dlxRoom = await prisma.room.findFirst({ where: { roomType: { code: "DLX" } } });
+
+    const group = await prisma.groupReservation.create({
       data: {
         groupCode: "MSV-GRP-2026-0001",
         groupName: "MOH Annual Conference Delegates",
@@ -284,25 +321,99 @@ async function main() {
         departureDate: new Date("2026-09-05"),
         adults: 40,
         children: 0,
-        roomCount: 15,
-        status: "TENTATIVE",
+        roomCount: 3,
+        status: "CONFIRMED",
         depositAmount: 5000,
         specialRequests: "Late checkout on final day, conference shuttle required",
         createdById: adminUser.id,
         guests: {
           create: [
-            { fullName: "Dr. Grace Mutasa", nationality: "Zimbabwe", roomTypeCode: "DLX", vipStatus: "VIP1" },
-            { fullName: "Mr. Peter Ndlovu", nationality: "Zimbabwe", roomTypeCode: "STD" },
-            { fullName: "Ms. Sarah Chiteve", nationality: "Zimbabwe", roomTypeCode: "STD" },
+            {
+              fullName: "Dr. Grace Mutasa",
+              nationality: "Zimbabwe",
+              nationalId: "63-1234567A12",
+              roomTypeCode: "DLX",
+              vipStatus: "VIP1",
+            },
+            {
+              fullName: "Mr. Peter Ndlovu",
+              nationality: "Zimbabwe",
+              nationalId: "63-9876543B45",
+              roomTypeCode: "STD",
+            },
+            {
+              fullName: "Ms. Sarah Chiteve",
+              nationality: "Zimbabwe",
+              passportNumber: "AE1234567",
+              roomTypeCode: "STD",
+            },
           ],
         },
       },
     });
+
+    const allocations = [
+      { room: dlxRoom, rate: 120, guest: "Dr. Grace Mutasa" },
+      { room: stdRooms[0], rate: 85, guest: "Mr. Peter Ndlovu" },
+      { room: stdRooms[1], rate: 85, guest: "Ms. Sarah Chiteve" },
+    ].filter((a) => a.room);
+
+    for (const alloc of allocations) {
+      await prisma.groupRoom.create({
+        data: {
+          groupReservationId: group.id,
+          roomId: alloc.room!.id,
+          roomTypeId: alloc.room!.roomTypeId,
+          rate: alloc.rate,
+          assignedGuestName: alloc.guest,
+          status: "BLOCKED",
+        },
+      });
+    }
+
     await prisma.documentNumberingPattern.update({
       where: { module: DocumentModule.GROUP_RESERVATIONS },
       data: { currentSequence: 2 },
     });
   }
+
+  // Chart of Accounts
+  const coaData = [
+    { accountCode: "1100", accountName: "Cash Clearing", accountType: "ASSET" as const },
+    { accountCode: "1200", accountName: "Guest Ledger", accountType: "ASSET" as const },
+    { accountCode: "1300", accountName: "Accounts Receivable", accountType: "ASSET" as const },
+    { accountCode: "2200", accountName: "VAT Output Liability", accountType: "LIABILITY" as const },
+    { accountCode: "4100", accountName: "Room Revenue", accountType: "REVENUE" as const },
+    { accountCode: "4200", accountName: "Food & Beverage Revenue", accountType: "REVENUE" as const },
+    { accountCode: "5100", accountName: "Operating Expenses", accountType: "EXPENSE" as const },
+  ];
+  for (const acct of coaData) {
+    await prisma.chartOfAccount.create({ data: acct });
+  }
+
+  const now = new Date();
+  await prisma.accountingPeriod.create({
+    data: { year: now.getFullYear(), month: now.getMonth() + 1, status: "OPEN" },
+  });
+
+  // POS outlets and menu
+  const restaurant = await prisma.posOutlet.create({
+    data: { code: "RESTAURANT", name: "Terrace Restaurant" },
+  });
+  const lounge = await prisma.posOutlet.create({
+    data: { code: "LOUNGE", name: "Skyview Lounge" },
+  });
+
+  const menuItems = [
+    { outletId: restaurant.id, code: "BRK-001", name: "Full English Breakfast", category: "Breakfast", price: 12, cost: 4 },
+    { outletId: restaurant.id, code: "MNS-001", name: "Grilled Beef Steak", category: "Mains", price: 22, cost: 9 },
+    { outletId: restaurant.id, code: "MNS-002", name: "Grilled Tilapia", category: "Mains", price: 18, cost: 7 },
+    { outletId: restaurant.id, code: "DSR-001", name: "Chocolate Mousse", category: "Desserts", price: 8, cost: 2.5 },
+    { outletId: lounge.id, code: "BEV-001", name: "Local Lager 500ml", category: "Beverages", price: 4, cost: 1.2 },
+    { outletId: lounge.id, code: "BEV-002", name: "House Wine Glass", category: "Beverages", price: 6, cost: 2 },
+    { outletId: lounge.id, code: "SNK-001", name: "Mixed Nuts Bowl", category: "Snacks", price: 5, cost: 1.5 },
+  ];
+  await prisma.menuItem.createMany({ data: menuItems });
 
   console.log("Seed complete.");
   console.log(`Property: ${property.propertyName}`);

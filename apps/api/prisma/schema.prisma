@@ -44,6 +44,8 @@ enum DocumentModule {
   PO
   GRN
   PAYROLL
+  POS_ORDERS
+  GL_ENTRIES
 }
 
 model DocumentNumberingPattern {
@@ -321,6 +323,7 @@ model Reservation {
   createdBy         User                       @relation("ReservationCreatedBy", fields: [createdById], references: [id])
   statusHistory     ReservationStatusHistory[]
   folios            Folio[]
+  posOrders         PosOrder[]
   createdAt         DateTime                   @default(now())
   updatedAt         DateTime                   @updatedAt
 
@@ -544,4 +547,200 @@ model GroupInvoice {
 
   @@index([groupReservationId])
   @@map("group_invoices")
+}
+
+// ─── Module 4: Restaurant & Bar POS ─────────────────────────────────────────
+
+enum PosOrderStatus {
+  OPEN
+  BILL_PRINTED
+  PAID
+  VOIDED
+}
+
+enum PosPaymentMethod {
+  CASH
+  CARD
+  MOBILE
+  ROOM_CHARGE
+}
+
+enum PosSessionStatus {
+  OPEN
+  CLOSED
+}
+
+model PosOutlet {
+  id        String       @id @default(cuid())
+  code      String       @unique
+  name      String
+  isActive  Boolean      @default(true)
+  menuItems MenuItem[]
+  orders    PosOrder[]
+  sessions  PosSession[]
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  @@map("pos_outlets")
+}
+
+model MenuItem {
+  id         String         @id @default(cuid())
+  outletId   String
+  outlet     PosOutlet      @relation(fields: [outletId], references: [id])
+  code       String         @unique
+  name       String
+  category   String
+  price      Decimal        @db.Decimal(10, 2)
+  cost       Decimal        @default(0) @db.Decimal(10, 2)
+  taxRate    Decimal        @default(0.15) @db.Decimal(5, 4)
+  isActive   Boolean        @default(true)
+  orderItems PosOrderItem[]
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+
+  @@index([outletId])
+  @@index([category])
+  @@map("menu_items")
+}
+
+model PosSession {
+  id            String           @id @default(cuid())
+  outletId      String
+  outlet        PosOutlet        @relation(fields: [outletId], references: [id])
+  cashierUserId String
+  floatAmount   Decimal          @db.Decimal(10, 2)
+  closingAmount Decimal?         @db.Decimal(10, 2)
+  status        PosSessionStatus @default(OPEN)
+  openedAt      DateTime         @default(now())
+  closedAt      DateTime?
+  orders        PosOrder[]
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  @@index([outletId])
+  @@index([cashierUserId])
+  @@map("pos_sessions")
+}
+
+model PosOrder {
+  id              String            @id @default(cuid())
+  orderNumber     String            @unique
+  outletId        String
+  outlet          PosOutlet         @relation(fields: [outletId], references: [id])
+  sessionId       String?
+  session         PosSession?       @relation(fields: [sessionId], references: [id])
+  tableNumber     String?
+  cashierUserId   String
+  status          PosOrderStatus    @default(OPEN)
+  subTotal        Decimal           @default(0) @db.Decimal(10, 2)
+  taxAmount       Decimal           @default(0) @db.Decimal(10, 2)
+  discountAmount  Decimal           @default(0) @db.Decimal(10, 2)
+  totalAmount     Decimal           @default(0) @db.Decimal(10, 2)
+  paymentMethod   PosPaymentMethod?
+  reservationId   String?
+  reservation     Reservation?      @relation(fields: [reservationId], references: [id])
+  roomNumber      String?
+  closedAt        DateTime?
+  items           PosOrderItem[]
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  @@index([outletId])
+  @@index([sessionId])
+  @@index([status])
+  @@map("pos_orders")
+}
+
+model PosOrderItem {
+  id              String   @id @default(cuid())
+  orderId         String
+  order           PosOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItemId      String
+  menuItem        MenuItem @relation(fields: [menuItemId], references: [id])
+  quantity        Int
+  unitPrice       Decimal  @db.Decimal(10, 2)
+  modifierDetails Json?
+  subtotal        Decimal  @db.Decimal(10, 2)
+  createdAt       DateTime @default(now())
+
+  @@index([orderId])
+  @@map("pos_order_items")
+}
+
+// ─── Module 8: Finance & Accounting ─────────────────────────────────────────
+
+enum AccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  REVENUE
+  EXPENSE
+}
+
+enum AccountingPeriodStatus {
+  OPEN
+  CLOSED
+}
+
+model ChartOfAccount {
+  id              String               @id @default(cuid())
+  accountCode     String               @unique
+  accountName     String
+  accountType     AccountType
+  parentAccountId String?
+  parentAccount   ChartOfAccount?      @relation("CoaHierarchy", fields: [parentAccountId], references: [id])
+  childAccounts   ChartOfAccount[]     @relation("CoaHierarchy")
+  currentBalance  Decimal              @default(0) @db.Decimal(14, 2)
+  isActive        Boolean              @default(true)
+  ledgerLines     GeneralLedgerLine[]
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  @@index([parentAccountId])
+  @@index([accountType])
+  @@map("chart_of_accounts")
+}
+
+model GeneralLedgerEntry {
+  id                String              @id @default(cuid())
+  entryNumber       String              @unique
+  transactionDate   DateTime            @db.Date
+  referenceDocument String?
+  description       String
+  createdById       String
+  lines             GeneralLedgerLine[]
+  createdAt         DateTime            @default(now())
+
+  @@index([transactionDate])
+  @@map("general_ledger_entries")
+}
+
+model GeneralLedgerLine {
+  id           String             @id @default(cuid())
+  glEntryId    String
+  glEntry      GeneralLedgerEntry @relation(fields: [glEntryId], references: [id], onDelete: Cascade)
+  accountId    String
+  account      ChartOfAccount     @relation(fields: [accountId], references: [id])
+  debitAmount  Decimal            @default(0) @db.Decimal(14, 2)
+  creditAmount Decimal            @default(0) @db.Decimal(14, 2)
+  createdAt    DateTime           @default(now())
+
+  @@index([glEntryId])
+  @@index([accountId])
+  @@map("general_ledger_lines")
+}
+
+model AccountingPeriod {
+  id         String                 @id @default(cuid())
+  year       Int
+  month      Int
+  status     AccountingPeriodStatus @default(OPEN)
+  closedAt   DateTime?
+  closedById String?
+  createdAt  DateTime               @default(now())
+  updatedAt  DateTime               @updatedAt
+
+  @@unique([year, month])
+  @@map("accounting_periods")
 }
