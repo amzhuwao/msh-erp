@@ -1,105 +1,108 @@
-# MSH ERP
+# Manica Skyview Hotel ERP (MSH ERP)
 
-Hotel Property Management System (PMS) — backend API and ERP modules.
+Property Management System for **Manica Skyview Hotel**, Mutare, Zimbabwe.
 
-## Develop on your DigitalOcean droplet (209.38.225.150)
+## Live API (droplet)
 
-Your droplet already has **nginx** running. This repo adds the app stack, bootstrap script, and Cursor Remote SSH workflow.
+- Base URL: `https://209.38.225.150/msh-erp`
+- Property info: `GET /api/property`
+- Health: `GET /api/health`
 
-### 1. One-time droplet setup
+### Default users (change after first login)
 
-SSH into the droplet as root (DigitalOcean console or your existing key):
+| Username | Password | Role |
+|----------|----------|------|
+| `admin` | `Admin@MSH2026!` | System Administrator |
+| `reception` | `Reception@MSH2026!` | Receptionist |
+| `fosupervisor` | `Supervisor@MSH2026!` | Front Office Supervisor |
 
-```bash
-ssh root@209.38.225.150
-```
-
-Clone and bootstrap:
-
-```bash
-git clone https://github.com/amzhuwao/msh-erp.git /opt/msh-erp
-cd /opt/msh-erp
-git checkout cursor/droplet-dev-setup-fb78   # or main after merge
-bash scripts/droplet-bootstrap.sh
-```
-
-The script installs Node 20, Docker, PostgreSQL (via Docker Compose), configures nginx, and starts the API as a systemd service.
-
-Verify (use HTTPS — port 80 redirects on this droplet):
+### Quick start
 
 ```bash
-curl -sk https://209.38.225.150/msh-erp/api/health
+# Login
+curl -sk -X POST https://209.38.225.150/msh-erp/api/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"reception","password":"Reception@MSH2026!"}'
+
+# Use token for authenticated requests
+curl -sk https://209.38.225.150/msh-erp/api/property/dashboard \
+  -H "Authorization: Bearer <token>"
 ```
 
-On shared droplets with existing apps (efundo, ajira), MSH ERP runs on **port 3003** behind the `/msh-erp/` nginx path.
+## Implemented modules (Phase 1)
 
-### 2. Connect Cursor via Remote SSH
+| Module | Status | Features |
+|--------|--------|----------|
+| **17 — Auth & RBAC** | ✅ | Login, JWT, role permissions, audit log |
+| **18 — Property config** | ✅ | Hotel profile, tax rates, doc numbering |
+| **3 — Rooms** | ✅ | 30 rooms, 4 room types, status tracking |
+| **1 — Reservations** | ✅ | Guests, availability, booking, check-in, cancel |
+| **14 — Rate plans** | ✅ | BAR rate plans per room type |
 
-On your **local machine**:
+## API endpoints
 
-```bash
-# Generate a key if you don't have one
-ssh-keygen -t ed25519 -C "cursor-msh-erp"
+### Auth
+- `POST /api/auth/login`
+- `GET /api/auth/me`
 
-# Copy it to the droplet (after bootstrap created user `mshdev`)
-ssh-copy-id mshdev@209.38.225.150
-```
+### Property & dashboard
+- `GET /api/property`
+- `GET /api/property/dashboard`
 
-Add to `~/.ssh/config`:
+### Guests
+- `GET /api/guests`
+- `POST /api/guests`
+- `GET /api/guests/:id`
+- `PUT /api/guests/:id`
 
-```
-Host msh-erp-droplet
-    HostName 209.38.225.150
-    User mshdev
-    IdentityFile ~/.ssh/id_ed25519
-```
+### Reservations
+- `GET /api/reservations/availability?checkIn=&checkOut=&adults=`
+- `GET /api/reservations`
+- `POST /api/reservations`
+- `GET /api/reservations/:id`
+- `POST /api/reservations/:id/checkin`
+- `POST /api/reservations/:id/cancel`
 
-In **Cursor**: Command Palette → **Remote-SSH: Connect to Host** → `mshdev@209.38.225.150` → open `/opt/msh-erp`.
+### Rooms
+- `GET /api/rooms`
+- `GET /api/rooms/types`
 
-### 3. Daily development on the droplet
+## Development
 
-```bash
-cd /opt/msh-erp
-npm install
-npm run dev          # API with hot reload on port 3000
-npm run db:studio    # Prisma Studio (database UI)
-npm run db:migrate   # After schema changes
-```
-
-Production API (systemd):
-
-```bash
-sudo systemctl status msh-erp-api
-sudo systemctl restart msh-erp-api
-journalctl -u msh-erp-api -f
-```
-
-### 4. Local development (Cloud Agent / laptop)
+Specs for all 20 modules are in `erp-dev-plan/`.
 
 ```bash
 cp .env.example apps/api/.env
-docker compose up -d postgres
+docker compose up -d postgres   # or use native PostgreSQL
 npm install
 npm run db:generate
 npm run db:push
+npm run db:seed
 npm run dev
 ```
 
 ## Project structure
 
 ```
-apps/api/          Express + TypeScript + Prisma API
-erp-dev-plan/      Module implementation guides (20 modules)
-deploy/            nginx + systemd configs for droplet
-scripts/           Droplet bootstrap script
+apps/api/           Express + TypeScript + Prisma API
+  prisma/schema.prisma
+  prisma/seed.ts    Manica Skyview seed data
+  src/routes/       REST endpoints
+  src/services/     Business logic
+  src/middleware/   Auth & validation
+erp-dev-plan/       Module implementation guides (20 modules)
+deploy/             nginx + systemd configs
+scripts/            Droplet bootstrap
 ```
 
-## Tech stack
+## Droplet development
 
-- **API**: Node.js 20, Express 5, TypeScript
-- **Database**: PostgreSQL 16, Prisma ORM
-- **Deploy**: Docker Compose, nginx, systemd
+SSH: `mshdev@209.38.225.150` → open `/opt/msh-erp`
 
-## ERP modules
+```bash
+npm run dev          # port from apps/api/.env (3003 on droplet)
+pm2 logs msh-erp-api
+pm2 restart msh-erp-api
+```
 
-Implementation guides live in `erp-dev-plan/`. Foundation schema starts with Module 1 (Reservations) and Module 17 (Users/Roles).
+**Important:** Do not overwrite `/opt/msh-erp/apps/api/.env` when deploying.

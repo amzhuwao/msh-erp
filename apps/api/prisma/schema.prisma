@@ -7,21 +7,79 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Module 17 — User, Role & Access Management (foundation)
-model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  passwordHash String
-  firstName    String
-  lastName     String
-  isActive     Boolean  @default(true)
-  roleId       String
-  role         Role     @relation(fields: [roleId], references: [id])
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+// ─── Module 18: System Administration ───────────────────────────────────────
 
-  @@index([roleId])
-  @@map("users")
+model PropertyConfiguration {
+  id              String   @id @default(cuid())
+  propertyName    String
+  address         String
+  vatNumber       String?
+  primaryCurrency String   @default("USD")
+  contactEmail    String?
+  contactPhone    String?
+  checkInTime     String   @default("14:00")
+  checkOutTime    String   @default("10:00")
+  logoUrl         String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("property_configuration")
+}
+
+model GlobalSetting {
+  id             String  @id @default(cuid())
+  key            String  @unique
+  value          String
+  description    String?
+  isSystemLocked Boolean @default(false)
+
+  @@map("global_settings")
+}
+
+enum DocumentModule {
+  RESERVATIONS
+  INVOICES
+  RECEIPTS
+  PO
+  GRN
+  PAYROLL
+}
+
+model DocumentNumberingPattern {
+  id              String         @id @default(cuid())
+  module          DocumentModule @unique
+  prefix          String
+  currentSequence Int            @default(1)
+  paddingDigits   Int            @default(4)
+  suffix          String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@map("document_numbering_patterns")
+}
+
+model TaxRateDefinition {
+  id          String   @id @default(cuid())
+  name        String
+  code        String   @unique
+  ratePercent Decimal  @db.Decimal(5, 4)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("tax_rate_definitions")
+}
+
+// ─── Module 17: User, Role & Access Management ──────────────────────────────
+
+model Department {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  users     User[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("departments")
 }
 
 model Role {
@@ -36,7 +94,150 @@ model Role {
   @@map("roles")
 }
 
-// Module 1 — Reservations & Front Office (starter schema)
+model User {
+  id                    String               @id @default(cuid())
+  username              String               @unique
+  email                 String               @unique
+  passwordHash          String
+  fullName              String
+  departmentId          String?
+  department            Department?          @relation(fields: [departmentId], references: [id])
+  roleId                String
+  role                  Role                 @relation(fields: [roleId], references: [id])
+  isActive              Boolean              @default(true)
+  sessionTimeoutMinutes Int                  @default(20)
+  lastLoginAt           DateTime?
+  mfaSecret             String?
+  permissionOverrides   PermissionOverride[]
+  reservationsCreated   Reservation[]        @relation("ReservationCreatedBy")
+  statusChanges         ReservationStatusHistory[]
+  auditLogs             AuditLog[]
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+
+  @@index([roleId])
+  @@index([departmentId])
+  @@map("users")
+}
+
+model UserGroup {
+  id          String            @id @default(cuid())
+  name        String            @unique
+  description String?
+  members     UserGroupMember[]
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@map("user_groups")
+}
+
+model UserGroupMember {
+  userGroupId String
+  userId      String
+  userGroup   UserGroup @relation(fields: [userGroupId], references: [id], onDelete: Cascade)
+  assignedAt  DateTime  @default(now())
+
+  @@id([userGroupId, userId])
+  @@map("user_group_members")
+}
+
+model PermissionOverride {
+  id        String  @id @default(cuid())
+  userId    String
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  module    String
+  action    String
+  isAllowed Boolean
+
+  @@unique([userId, module, action])
+  @@map("permission_overrides")
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  module     String
+  action     String
+  entityType String?
+  entityId   String?
+  details    Json?
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+  @@index([module, action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// ─── Module 3: Housekeeping / Rooms ─────────────────────────────────────────
+
+enum RoomStatus {
+  OCCUPIED
+  OCCUPIED_DIRTY
+  VACANT_DIRTY
+  CLEANING_IN_PROGRESS
+  VACANT_CLEAN
+  INSPECTED
+  OUT_OF_ORDER
+  OUT_OF_SERVICE
+  MAINTENANCE
+}
+
+model RoomType {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  name        String
+  description String?
+  maxAdults   Int      @default(2)
+  maxChildren Int      @default(1)
+  baseRate    Decimal  @db.Decimal(10, 2)
+  rooms       Room[]
+  ratePlans   RatePlan[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("room_types")
+}
+
+model Room {
+  id           String        @id @default(cuid())
+  number       String        @unique
+  floor        Int
+  roomTypeId   String
+  roomType     RoomType      @relation(fields: [roomTypeId], references: [id])
+  status       RoomStatus    @default(INSPECTED)
+  isActive     Boolean       @default(true)
+  reservations Reservation[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@index([roomTypeId])
+  @@index([status])
+  @@map("rooms")
+}
+
+// ─── Module 14: Revenue Management (starter) ────────────────────────────────
+
+model RatePlan {
+  id         String        @id @default(cuid())
+  code       String        @unique
+  name       String
+  roomTypeId String
+  roomType   RoomType      @relation(fields: [roomTypeId], references: [id])
+  baseRate   Decimal       @db.Decimal(10, 2)
+  isActive   Boolean       @default(true)
+  reservations Reservation[]
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
+  @@index([roomTypeId])
+  @@map("rate_plans")
+}
+
+// ─── Module 1: Reservations & Front Office ──────────────────────────────────
+
 enum ReservationStatus {
   TENTATIVE
   CONFIRMED
@@ -65,6 +266,7 @@ model Guest {
   vipStatus      VipStatus     @default(NONE)
   notes          String?
   reservations   Reservation[]
+  folios         Folio[]
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
@@ -72,21 +274,87 @@ model Guest {
 }
 
 model Reservation {
-  id                String            @id @default(cuid())
-  reservationNumber String            @unique
+  id                String                     @id @default(cuid())
+  reservationNumber String                     @unique
   guestId           String
-  guest             Guest             @relation(fields: [guestId], references: [id])
-  checkInDate       DateTime          @db.Date
-  checkOutDate      DateTime          @db.Date
-  adults            Int               @default(1)
-  children          Int               @default(0)
-  status            ReservationStatus @default(TENTATIVE)
+  guest             Guest                      @relation(fields: [guestId], references: [id])
+  ratePlanId        String
+  ratePlan          RatePlan                   @relation(fields: [ratePlanId], references: [id])
+  roomId            String?
+  room              Room?                      @relation(fields: [roomId], references: [id])
+  checkInDate       DateTime                   @db.Date
+  checkOutDate      DateTime                   @db.Date
+  adults            Int                        @default(1)
+  children          Int                        @default(0)
+  status            ReservationStatus          @default(TENTATIVE)
   specialRequests   String?
-  createdAt         DateTime          @default(now())
-  updatedAt         DateTime          @updatedAt
+  cancellationReason String?
+  createdById       String
+  createdBy         User                       @relation("ReservationCreatedBy", fields: [createdById], references: [id])
+  statusHistory     ReservationStatusHistory[]
+  folios            Folio[]
+  createdAt         DateTime                   @default(now())
+  updatedAt         DateTime                   @updatedAt
 
   @@index([guestId])
+  @@index([roomId])
   @@index([status])
   @@index([checkInDate, checkOutDate])
   @@map("reservations")
+}
+
+model ReservationStatusHistory {
+  id            String            @id @default(cuid())
+  reservationId String
+  reservation   Reservation       @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  oldStatus     ReservationStatus?
+  newStatus     ReservationStatus
+  changedById   String
+  changedBy     User              @relation(fields: [changedById], references: [id])
+  changeReason  String?
+  createdAt     DateTime          @default(now())
+
+  @@index([reservationId])
+  @@map("reservation_status_history")
+}
+
+enum FolioStatus {
+  OPEN
+  SETTLED
+  CLOSED
+}
+
+enum FolioLineType {
+  CHARGE
+  PAYMENT
+  ADJUSTMENT
+}
+
+model Folio {
+  id            String        @id @default(cuid())
+  reservationId String
+  reservation   Reservation   @relation(fields: [reservationId], references: [id])
+  guestId       String
+  guest         Guest         @relation(fields: [guestId], references: [id])
+  status        FolioStatus   @default(OPEN)
+  lines         FolioLine[]
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@index([reservationId])
+  @@map("folios")
+}
+
+model FolioLine {
+  id          String        @id @default(cuid())
+  folioId     String
+  folio       Folio         @relation(fields: [folioId], references: [id], onDelete: Cascade)
+  lineType    FolioLineType
+  description String
+  amount      Decimal       @db.Decimal(10, 2)
+  postedById  String?
+  createdAt   DateTime      @default(now())
+
+  @@index([folioId])
+  @@map("folio_lines")
 }
