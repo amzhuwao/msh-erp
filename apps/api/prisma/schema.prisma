@@ -38,6 +38,7 @@ model GlobalSetting {
 
 enum DocumentModule {
   RESERVATIONS
+  GROUP_RESERVATIONS
   INVOICES
   RECEIPTS
   PO
@@ -110,6 +111,7 @@ model User {
   mfaSecret             String?
   permissionOverrides   PermissionOverride[]
   reservationsCreated   Reservation[]        @relation("ReservationCreatedBy")
+  groupReservationsCreated GroupReservation[] @relation("GroupReservationCreatedBy")
   statusChanges         ReservationStatusHistory[]
   auditLogs             AuditLog[]
   createdAt             DateTime             @default(now())
@@ -195,6 +197,7 @@ model RoomType {
   baseRate    Decimal  @db.Decimal(10, 2)
   rooms       Room[]
   ratePlans   RatePlan[]
+  groupRooms  GroupRoom[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -231,6 +234,7 @@ model Room {
   status       RoomStatus    @default(INSPECTED)
   isActive     Boolean       @default(true)
   reservations Reservation[]
+  groupRooms   GroupRoom[]
   assignments  HousekeepingAssignment[]
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
@@ -311,6 +315,8 @@ model Reservation {
   status            ReservationStatus          @default(TENTATIVE)
   specialRequests   String?
   cancellationReason String?
+  groupReservationId String?
+  groupReservation   GroupReservation?   @relation(fields: [groupReservationId], references: [id])
   createdById       String
   createdBy         User                       @relation("ReservationCreatedBy", fields: [createdById], references: [id])
   statusHistory     ReservationStatusHistory[]
@@ -320,6 +326,7 @@ model Reservation {
 
   @@index([guestId])
   @@index([roomId])
+  @@index([groupReservationId])
   @@index([status])
   @@index([checkInDate, checkOutDate])
   @@map("reservations")
@@ -379,4 +386,162 @@ model FolioLine {
 
   @@index([folioId])
   @@map("folio_lines")
+}
+
+// ─── Module 13: Corporate Clients (starter for groups) ────────────────────────
+
+model CorporateProfile {
+  id                 String             @id @default(cuid())
+  companyName        String
+  registrationNumber String?            @unique
+  contactName        String
+  contactEmail       String
+  phone              String?
+  creditLimit        Decimal            @default(0) @db.Decimal(12, 2)
+  currentOutstanding Decimal            @default(0) @db.Decimal(12, 2)
+  paymentTermsDays   Int                @default(30)
+  isCreditApproved   Boolean            @default(false)
+  isActive           Boolean            @default(true)
+  groupReservations  GroupReservation[]
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  @@map("corporate_profiles")
+}
+
+// ─── Module 2: Group Reservations ───────────────────────────────────────────
+
+enum GroupReservationStatus {
+  TENTATIVE
+  CONFIRMED
+  CLOSED
+  CANCELLED
+}
+
+enum GroupGuestCheckInStatus {
+  PENDING
+  CHECKED_IN
+  CHECKED_OUT
+}
+
+enum GroupRoomAllocationStatus {
+  BLOCKED
+  ALLOCATED
+}
+
+enum GroupChargePaidBy {
+  MASTER
+  GUEST
+  COMPANY
+  SPONSOR
+}
+
+enum GroupInvoiceStatus {
+  UNPAID
+  PAID
+  PARTIAL
+}
+
+model GroupReservation {
+  id              String                 @id @default(cuid())
+  groupCode       String                 @unique
+  companyId       String?
+  company         CorporateProfile?      @relation(fields: [companyId], references: [id])
+  groupName       String
+  contactPerson   String
+  phone           String
+  email           String
+  arrivalDate     DateTime               @db.Date
+  departureDate   DateTime               @db.Date
+  adults          Int                    @default(1)
+  children        Int                    @default(0)
+  roomCount       Int
+  status          GroupReservationStatus @default(TENTATIVE)
+  depositAmount   Decimal                @default(0) @db.Decimal(10, 2)
+  balance         Decimal                @default(0) @db.Decimal(10, 2)
+  specialRequests String?
+  createdById     String
+  createdBy       User                   @relation("GroupReservationCreatedBy", fields: [createdById], references: [id])
+  guests          GroupGuest[]
+  roomAllocations GroupRoom[]
+  charges         GroupCharge[]
+  invoices        GroupInvoice[]
+  reservations    Reservation[]
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+
+  @@index([companyId])
+  @@index([status])
+  @@index([arrivalDate, departureDate])
+  @@map("group_reservations")
+}
+
+model GroupGuest {
+  id                  String                  @id @default(cuid())
+  groupReservationId  String
+  groupReservation    GroupReservation        @relation(fields: [groupReservationId], references: [id], onDelete: Cascade)
+  reservationId       String?                 @unique
+  fullName            String
+  nationality         String?
+  nationalId          String?
+  passportNumber      String?
+  roomTypeCode        String?
+  roomNumber          String?
+  vipStatus           VipStatus               @default(NONE)
+  notes               String?
+  checkInStatus       GroupGuestCheckInStatus @default(PENDING)
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
+
+  @@index([groupReservationId])
+  @@map("group_guests")
+}
+
+model GroupRoom {
+  id                 String                    @id @default(cuid())
+  groupReservationId String
+  groupReservation   GroupReservation          @relation(fields: [groupReservationId], references: [id], onDelete: Cascade)
+  roomId             String
+  room               Room                      @relation(fields: [roomId], references: [id])
+  roomTypeId         String
+  roomType           RoomType                  @relation(fields: [roomTypeId], references: [id])
+  rate               Decimal                   @db.Decimal(10, 2)
+  status             GroupRoomAllocationStatus @default(BLOCKED)
+  assignedGuestName  String?
+  createdAt          DateTime                  @default(now())
+  updatedAt          DateTime                  @updatedAt
+
+  @@unique([groupReservationId, roomId])
+  @@index([groupReservationId])
+  @@map("group_rooms")
+}
+
+model GroupCharge {
+  id                 String            @id @default(cuid())
+  groupReservationId String
+  groupReservation   GroupReservation  @relation(fields: [groupReservationId], references: [id], onDelete: Cascade)
+  guestId            String?
+  chargeType         String
+  amount             Decimal           @db.Decimal(10, 2)
+  paidBy             GroupChargePaidBy @default(MASTER)
+  chargeDate         DateTime          @db.Date
+  createdAt          DateTime          @default(now())
+
+  @@index([groupReservationId])
+  @@map("group_charges")
+}
+
+model GroupInvoice {
+  id                 String             @id @default(cuid())
+  groupReservationId String
+  groupReservation   GroupReservation   @relation(fields: [groupReservationId], references: [id], onDelete: Cascade)
+  invoiceType        String
+  amount             Decimal            @db.Decimal(10, 2)
+  outstanding        Decimal            @db.Decimal(10, 2)
+  status             GroupInvoiceStatus @default(UNPAID)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  @@index([groupReservationId])
+  @@map("group_invoices")
 }

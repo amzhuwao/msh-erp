@@ -17,6 +17,7 @@ Property Management System for **Manica Skyview Hotel**, Mutare, Zimbabwe.
 | `reception` | `Reception@MSH2026!` | Receptionist |
 | `fosupervisor` | `Supervisor@MSH2026!` | Front Office Supervisor |
 | `housekeeping` | `Housekeeping@MSH2026!` | Housekeeping Supervisor |
+| `sales` | `Sales@MSH2026!` | Sales Coordinator |
 
 ## Features
 
@@ -33,11 +34,18 @@ Property Management System for **Manica Skyview Hotel**, Mutare, Zimbabwe.
 - Room status grid with cleaning workflow (Dirty → Cleaning → Clean → Inspected)
 - Status filters and per-room action buttons
 
+### Group Reservations UI (`/dashboard/groups`)
+- Group dashboard with metrics (tentative, confirmed, arrivals)
+- New group booking form with availability check
+- Group detail: room allocation, guest list, CSV rooming list import
+- Confirm booking workflow
+
 ### API modules
 - Module 17: Auth & RBAC
 - Module 18: Property configuration
 - Module 1: Reservations, guests, check-in/out, folios
 - Module 3: Housekeeping status workflow
+- Module 2: Group reservations, corporate profiles, rooming list import
 - Module 14: Rate plans
 
 ## API endpoints
@@ -58,7 +66,12 @@ POST /api/folios/:id/charges
 POST /api/folios/:id/payments
 GET  /api/housekeeping/dashboard
 PUT  /api/housekeeping/rooms/:id/status
-POST /api/night-audit/run
+POST /api/group-reservations
+GET  /api/group-reservations/dashboard
+POST /api/group-reservations/:id/confirm
+POST /api/group-reservations/:id/allocate-room
+POST /api/group-reservations/:id/import-rooming-list
+GET  /api/corporate/profiles
 ```
 
 ## Development
