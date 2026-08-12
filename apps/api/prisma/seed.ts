@@ -31,6 +31,7 @@ const adminPermissions = {
 async function main() {
   console.log("Seeding Manica Skyview Hotel ERP...");
 
+  await prisma.housekeepingAssignment.deleteMany();
   await prisma.auditLog.deleteMany();
   await prisma.folioLine.deleteMany();
   await prisma.folio.deleteMany();
@@ -201,12 +202,23 @@ async function main() {
     }
   }
 
+  await prisma.user.create({
+    data: {
+      username: "housekeeping",
+      email: "housekeeping@manicaskyview.co.zw",
+      passwordHash: await bcrypt.hash("Housekeeping@MSH2026!", 12),
+      fullName: "Housekeeping Supervisor",
+      departmentId: housekeeping.id,
+      roleId: supervisorRole.id,
+    },
+  });
   console.log("Seed complete.");
   console.log(`Property: ${property.propertyName}`);
   console.log("Default logins:");
   console.log("  admin / Admin@MSH2026!");
   console.log("  reception / Reception@MSH2026!");
   console.log("  fosupervisor / Supervisor@MSH2026!");
+  console.log("  housekeeping / Housekeeping@MSH2026!");
 }
 
 main()
