@@ -64,14 +64,14 @@ export default function NewGroupPage() {
   return (
     <div className="p-6 max-w-2xl">
       <Link href="/dashboard/groups" className="text-sm text-slate-400 hover:text-slate-600">← Back to groups</Link>
-      <h1 className="text-2xl font-semibold text-[#0f2744] mt-4 mb-6">New Group Reservation</h1>
+      <h1 className="text-2xl font-semibold text-[hsl(var(--primary))] mt-4 mb-6">New Group Reservation</h1>
 
-      <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-slate-200 p-6 space-y-4">
+      <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-[hsl(var(--border))] p-6 space-y-4">
         <Field label="Group Name" value={form.groupName} onChange={(v) => setForm({ ...form, groupName: v })} required />
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">Company (optional)</label>
           <select
-            className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+            className="w-full border border-[hsl(var(--border))] rounded-lg px-3 py-2 text-sm"
             value={form.companyId}
             onChange={(e) => setForm({ ...form, companyId: e.target.value })}
           >
@@ -95,7 +95,7 @@ export default function NewGroupPage() {
           <Field label="Children" type="number" value={String(form.children)} onChange={(v) => setForm({ ...form, children: Number(v) })} />
           <Field label="Rooms Required" type="number" value={String(form.roomCount)} onChange={(v) => setForm({ ...form, roomCount: Number(v) })} required />
         </div>
-        <button type="button" onClick={checkAvailability} className="text-sm text-[#4a90a4] hover:underline">
+        <button type="button" onClick={checkAvailability} className="text-sm text-[hsl(var(--accent))] hover:underline">
           Check availability
         </button>
         {availability && (
@@ -108,14 +108,14 @@ export default function NewGroupPage() {
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">Special Requests</label>
           <textarea
-            className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+            className="w-full border border-[hsl(var(--border))] rounded-lg px-3 py-2 text-sm"
             rows={3}
             value={form.specialRequests}
             onChange={(e) => setForm({ ...form, specialRequests: e.target.value })}
           />
         </div>
         <div className="flex gap-3 pt-2">
-          <button type="submit" disabled={loading} className="bg-[#0f2744] text-white px-6 py-2.5 rounded-lg text-sm font-medium disabled:opacity-60">
+          <button type="submit" disabled={loading} className="bg-[hsl(var(--primary))] text-white px-6 py-2.5 rounded-lg text-sm font-medium disabled:opacity-60">
             {loading ? "Creating…" : "Save Draft"}
           </button>
         </div>
@@ -135,7 +135,7 @@ function Field({
       <input
         type={type}
         required={required}
-        className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+        className="w-full border border-[hsl(var(--border))] rounded-lg px-3 py-2 text-sm"
         value={value}
         onChange={(e) => onChange(e.target.value)}
       />

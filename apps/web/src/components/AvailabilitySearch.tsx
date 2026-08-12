@@ -36,22 +36,22 @@ export function AvailabilitySearch() {
 
   return (
     <div>
-      <h2 className="text-lg font-semibold text-[#0f2744] mb-4">Room Availability</h2>
+      <h2 className="text-lg font-semibold text-[hsl(var(--primary))] mb-4">Room Availability</h2>
       <div className="flex flex-wrap gap-3 mb-6">
         <input type="date" className="border rounded-lg px-3 py-2 text-sm" value={checkIn} onChange={(e) => setCheckIn(e.target.value)} />
         <input type="date" className="border rounded-lg px-3 py-2 text-sm" value={checkOut} onChange={(e) => setCheckOut(e.target.value)} />
         <input type="number" min={1} className="border rounded-lg px-3 py-2 text-sm w-20" value={adults} onChange={(e) => setAdults(Number(e.target.value))} />
-        <button onClick={search} disabled={loading} className="bg-[#0f2744] text-white px-4 py-2 rounded-lg text-sm hover:bg-[#1a3a5c] disabled:opacity-60">
+        <button onClick={search} disabled={loading} className="bg-[hsl(var(--primary))] text-white px-4 py-2 rounded-lg text-sm hover:opacity-90 disabled:opacity-60">
           {loading ? "Searching…" : "Search"}
         </button>
       </div>
       {results.length > 0 && (
         <div className="grid md:grid-cols-2 gap-4">
           {results.map((r) => (
-            <div key={r.roomTypeId} className="border border-slate-200 rounded-xl p-4">
-              <div className="font-semibold text-[#0f2744]">{r.name}</div>
+            <div key={r.roomTypeId} className="border border-[hsl(var(--border))] rounded-xl p-4">
+              <div className="font-semibold text-[hsl(var(--primary))]">{r.name}</div>
               <div className="text-sm text-slate-500 mt-1">{r.code} · {r.availableCount} rooms available</div>
-              <div className="text-lg font-bold text-[#c9a227] mt-2">${Number(r.nightlyRate).toFixed(2)}<span className="text-sm font-normal text-slate-400">/night</span></div>
+              <div className="text-lg font-bold text-[hsl(var(--accent))] mt-2">${Number(r.nightlyRate).toFixed(2)}<span className="text-sm font-normal text-slate-400">/night</span></div>
             </div>
           ))}
         </div>

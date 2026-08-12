@@ -57,7 +57,7 @@ export function FolioPanel({ folioId, onClose }: { folioId: string; onClose: () 
     <div>
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h2 className="text-lg font-semibold text-[#0f2744]">
+          <h2 className="text-lg font-semibold text-[hsl(var(--primary))]">
             Folio — {folio.guest.firstName} {folio.guest.lastName}
           </h2>
           <p className="text-sm text-slate-500">Room {folio.reservation.room?.number ?? "—"}</p>
@@ -75,7 +75,7 @@ export function FolioPanel({ folioId, onClose }: { folioId: string; onClose: () 
           <h3 className="font-medium text-sm text-slate-600 mb-2">Charges</h3>
           <div className="space-y-1 mb-3">
             {charges.map((l) => (
-              <div key={l.id} className="flex justify-between text-sm border-b border-slate-100 py-1.5">
+              <div key={l.id} className="flex justify-between text-sm border-b border-[hsl(var(--border))] py-1.5">
                 <span>{l.description}</span>
                 <span>${Number(l.amount).toFixed(2)}</span>
               </div>
@@ -91,7 +91,7 @@ export function FolioPanel({ folioId, onClose }: { folioId: string; onClose: () 
           <h3 className="font-medium text-sm text-slate-600 mb-2">Payments</h3>
           <div className="space-y-1 mb-3">
             {payments.map((l) => (
-              <div key={l.id} className="flex justify-between text-sm border-b border-slate-100 py-1.5">
+              <div key={l.id} className="flex justify-between text-sm border-b border-[hsl(var(--border))] py-1.5">
                 <span>{l.description}</span>
                 <span className="text-emerald-600">-${Number(l.amount).toFixed(2)}</span>
               </div>

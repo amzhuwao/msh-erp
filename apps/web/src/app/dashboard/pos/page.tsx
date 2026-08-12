@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
+import { PageHeader } from "@/components/ui/PageHeader";
 
 interface Outlet {
   id: string;
@@ -120,8 +121,10 @@ export default function PosPage() {
 
   return (
     <div className="p-6">
-      <h1 className="text-2xl font-semibold text-[#0f2744] mb-1">Restaurant & Bar POS</h1>
-      <p className="text-slate-500 text-sm mb-6">Terrace Restaurant · Skyview Lounge</p>
+      <PageHeader
+        title="Restaurant & Bar POS"
+        description="Terrace Restaurant · Skyview Lounge"
+      />
 
       <div className="flex gap-2 mb-4">
         {outlets.map((o) => (
@@ -129,7 +132,7 @@ export default function PosPage() {
             key={o.id}
             onClick={() => { setSelectedOutlet(o.id); setCart([]); setLastOrderId(null); }}
             className={`px-4 py-2 rounded-lg text-sm ${
-              selectedOutlet === o.id ? "bg-[#0f2744] text-white" : "bg-white border border-slate-200"
+              selectedOutlet === o.id ? "bg-[hsl(var(--primary))] text-white" : "bg-white border border-[hsl(var(--border))]"
             }`}
           >
             {o.name}
@@ -138,19 +141,19 @@ export default function PosPage() {
       </div>
 
       <div className="grid lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 p-4">
+        <div className="lg:col-span-2 bg-white rounded-xl border border-[hsl(var(--border))] p-4">
           {categories.map((cat) => (
             <div key={cat} className="mb-6">
-              <h2 className="text-sm font-semibold text-[#4a90a4] uppercase tracking-wide mb-2">{cat}</h2>
+              <h2 className="text-sm font-semibold text-[hsl(var(--accent))] uppercase tracking-wide mb-2">{cat}</h2>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
                 {outlet?.menuItems.filter((m) => m.category === cat).map((item) => (
                   <button
                     key={item.id}
                     onClick={() => addToCart(item)}
-                    className="text-left border border-slate-100 rounded-lg p-3 hover:border-[#4a90a4] hover:bg-slate-50 transition"
+                    className="text-left border border-[hsl(var(--border))] rounded-lg p-3 hover:border-[#4a90a4] hover:bg-slate-50 transition"
                   >
                     <div className="font-medium text-sm">{item.name}</div>
-                    <div className="text-[#0f2744] font-semibold mt-1">${Number(item.price).toFixed(2)}</div>
+                    <div className="text-[hsl(var(--primary))] font-semibold mt-1">${Number(item.price).toFixed(2)}</div>
                   </button>
                 ))}
               </div>
@@ -158,8 +161,8 @@ export default function PosPage() {
           ))}
         </div>
 
-        <div className="bg-white rounded-xl border border-slate-200 p-4">
-          <h2 className="font-semibold text-[#0f2744] mb-3">Current Bill</h2>
+        <div className="bg-white rounded-xl border border-[hsl(var(--border))] p-4">
+          <h2 className="font-semibold text-[hsl(var(--primary))] mb-3">Current Bill</h2>
           {cart.length === 0 && !lastOrderId && (
             <p className="text-slate-400 text-sm">Select menu items to start an order.</p>
           )}
@@ -176,12 +179,12 @@ export default function PosPage() {
               <div className="border-t pt-2 text-sm space-y-1">
                 <div className="flex justify-between"><span>Subtotal</span><span>${subTotal.toFixed(2)}</span></div>
                 <div className="flex justify-between text-slate-500"><span>VAT 15%</span><span>${taxAmount.toFixed(2)}</span></div>
-                <div className="flex justify-between font-semibold text-[#0f2744]"><span>Total</span><span>${total.toFixed(2)}</span></div>
+                <div className="flex justify-between font-semibold text-[hsl(var(--primary))]"><span>Total</span><span>${total.toFixed(2)}</span></div>
               </div>
               <button
                 onClick={submitOrder}
                 disabled={loading}
-                className="w-full mt-4 bg-[#0f2744] text-white py-2 rounded-lg text-sm disabled:opacity-50"
+                className="w-full mt-4 bg-[hsl(var(--primary))] text-white py-2 rounded-lg text-sm disabled:opacity-50"
               >
                 Create Order
               </button>
@@ -219,8 +222,8 @@ export default function PosPage() {
         </div>
       </div>
 
-      <section className="bg-white rounded-xl border border-slate-200 p-4 mt-6">
-        <h2 className="font-semibold text-[#0f2744] mb-3">Recent Orders</h2>
+      <section className="bg-white rounded-xl border border-[hsl(var(--border))] p-4 mt-6">
+        <h2 className="font-semibold text-[hsl(var(--primary))] mb-3">Recent Orders</h2>
         <ul className="space-y-1 text-sm">
           {orders.map((o) => (
             <li key={o.id} className="flex justify-between py-1.5 border-b border-slate-50">

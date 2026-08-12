@@ -59,7 +59,7 @@ export default function HousekeepingPage() {
   return (
     <div className="p-6">
       <header className="mb-6">
-        <h1 className="text-2xl font-semibold text-[#0f2744]">Housekeeping</h1>
+        <h1 className="text-2xl font-semibold text-[hsl(var(--primary))]">Housekeeping</h1>
         <p className="text-slate-500 text-sm mt-1">Room status grid & cleaning workflow</p>
       </header>
 
@@ -78,9 +78,9 @@ export default function HousekeepingPage() {
 
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
         {filtered.map((room) => (
-          <div key={room.id} className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm">
+          <div key={room.id} className="bg-white border border-[hsl(var(--border))] rounded-xl p-3 shadow-sm">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-lg font-bold text-[#0f2744]">{room.number}</span>
+              <span className="text-lg font-bold text-[hsl(var(--primary))]">{room.number}</span>
               <span className="text-xs text-slate-400">F{room.floor}</span>
             </div>
             <div className="text-xs text-slate-500 mb-2">{room.roomType.code}</div>
@@ -97,7 +97,7 @@ export default function HousekeepingPage() {
                 <button
                   key={action.status}
                   onClick={() => updateStatus(room.id, action.status)}
-                  className="w-full text-[10px] bg-[#0f2744] text-white py-1 rounded hover:bg-[#1a3a5c]"
+                  className="w-full text-[10px] bg-[hsl(var(--primary))] text-white py-1 rounded hover:opacity-90"
                 >
                   {action.label}
                 </button>
@@ -115,7 +115,7 @@ function FilterChip({ label, count, active, onClick }: { label: string; count: n
     <button
       onClick={onClick}
       className={`px-3 py-1.5 rounded-full text-xs font-medium transition ${
-        active ? "bg-[#0f2744] text-white" : "bg-white border border-slate-200 text-slate-600 hover:border-slate-300"
+        active ? "bg-[hsl(var(--primary))] text-white" : "bg-white border border-[hsl(var(--border))] text-slate-600 hover:border-slate-300"
       }`}
     >
       {label} ({count})

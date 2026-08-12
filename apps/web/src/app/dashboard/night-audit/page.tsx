@@ -32,7 +32,7 @@ export default function NightAuditPage() {
   return (
     <div className="p-6 max-w-2xl">
       <header className="mb-6">
-        <h1 className="text-2xl font-semibold text-[#0f2744]">Night Audit</h1>
+        <h1 className="text-2xl font-semibold text-[hsl(var(--primary))]">Night Audit</h1>
         <p className="text-slate-500 text-sm mt-1">
           Close the business day — validate departures/arrivals, post room charges, mark no-shows.
         </p>
@@ -41,14 +41,14 @@ export default function NightAuditPage() {
       <button
         onClick={runAudit}
         disabled={loading}
-        className="bg-[#0f2744] text-white px-6 py-3 rounded-xl font-medium hover:bg-[#1a3a5c] disabled:opacity-60"
+        className="bg-[hsl(var(--primary))] text-white px-6 py-3 rounded-xl font-medium hover:opacity-90 disabled:opacity-60"
       >
         {loading ? "Running audit…" : "Run Night Audit"}
       </button>
 
       {result && (
-        <div className="mt-8 bg-white border border-slate-200 rounded-xl p-6 space-y-4">
-          <h2 className="font-semibold text-[#0f2744]">Audit Results — {result.businessDate}</h2>
+        <div className="mt-8 bg-white border border-[hsl(var(--border))] rounded-xl p-6 space-y-4">
+          <h2 className="font-semibold text-[hsl(var(--primary))]">Audit Results — {result.businessDate}</h2>
           <div className="grid grid-cols-2 gap-4 text-sm">
             <div className="bg-amber-50 rounded-lg p-3">
               <div className="text-2xl font-bold text-amber-700">{result.exceptions.pendingDepartures.length}</div>

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
+import { PageHeader } from "@/components/ui/PageHeader";
 
 interface GroupItem {
   id: string;
@@ -38,15 +39,12 @@ export default function GroupsPage() {
 
   return (
     <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-semibold text-[#0f2744]">Group Reservations</h1>
-          <p className="text-slate-500 text-sm mt-1">Manage block bookings, rooming lists, and allocations</p>
-        </div>
-        <Link
-          href="/dashboard/groups/new"
-          className="bg-[#0f2744] text-white px-4 py-2.5 rounded-lg text-sm font-medium hover:bg-[#1a3a5c]"
-        >
+      <div className="flex items-start justify-between gap-4 mb-6">
+        <PageHeader
+          title="Group Reservations"
+          description="Manage block bookings, rooming lists, and allocations"
+        />
+        <Link href="/dashboard/groups/new" className="msh-btn msh-btn-primary shrink-0 mt-1">
           New Group Booking
         </Link>
       </div>
@@ -54,27 +52,29 @@ export default function GroupsPage() {
       {stats && (
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
           {[
-            { label: "Tentative", value: stats.tentative, color: "bg-slate-100 text-slate-700" },
-            { label: "Confirmed", value: stats.confirmed, color: "bg-emerald-50 text-emerald-700" },
-            { label: "Arrivals Today", value: stats.arrivalsToday, color: "bg-blue-50 text-blue-700" },
-            { label: "Departures Today", value: stats.departuresToday, color: "bg-amber-50 text-amber-700" },
-            { label: "Cancelled", value: stats.cancelled, color: "bg-red-50 text-red-700" },
+            { label: "Tentative", value: stats.tentative },
+            { label: "Confirmed", value: stats.confirmed },
+            { label: "Arrivals Today", value: stats.arrivalsToday },
+            { label: "Departures Today", value: stats.departuresToday },
+            { label: "Cancelled", value: stats.cancelled },
           ].map((s) => (
-            <div key={s.label} className={`rounded-xl p-3 ${s.color}`}>
-              <div className="text-xl font-bold">{s.value}</div>
-              <div className="text-xs opacity-80">{s.label}</div>
+            <div key={s.label} className="msh-stat-card py-3">
+              <div className="text-xl font-bold text-[hsl(var(--primary))]">{s.value}</div>
+              <div className="text-xs text-[hsl(var(--muted-foreground))]">{s.label}</div>
             </div>
           ))}
         </div>
       )}
 
-      <div className="flex gap-2 mb-4">
+      <div className="flex gap-2 mb-4 flex-wrap">
         {["", "TENTATIVE", "CONFIRMED", "CANCELLED"].map((s) => (
           <button
             key={s || "ALL"}
             onClick={() => setFilter(s)}
-            className={`px-3 py-1.5 rounded-full text-xs font-medium ${
-              filter === s ? "bg-[#0f2744] text-white" : "bg-white border border-slate-200 text-slate-600"
+            className={`msh-badge ${
+              filter === s
+                ? "bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]"
+                : "bg-white border border-[hsl(var(--border))] text-[hsl(var(--muted-foreground))]"
             }`}
           >
             {s || "All"}
@@ -82,29 +82,32 @@ export default function GroupsPage() {
         ))}
       </div>
 
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+      <div className="msh-card overflow-hidden">
         <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-slate-500 text-left">
+          <thead className="bg-[hsl(var(--muted))] text-[hsl(var(--muted-foreground))] text-left">
             <tr>
-              <th className="p-3">Code</th>
-              <th className="p-3">Group</th>
-              <th className="p-3">Company</th>
-              <th className="p-3">Dates</th>
-              <th className="p-3">Rooms</th>
-              <th className="p-3">Guests</th>
-              <th className="p-3">Status</th>
+              <th className="p-3 font-medium">Code</th>
+              <th className="p-3 font-medium">Group</th>
+              <th className="p-3 font-medium">Company</th>
+              <th className="p-3 font-medium">Dates</th>
+              <th className="p-3 font-medium">Rooms</th>
+              <th className="p-3 font-medium">Guests</th>
+              <th className="p-3 font-medium">Status</th>
             </tr>
           </thead>
           <tbody>
             {items.map((g) => (
-              <tr key={g.id} className="border-t border-slate-100 hover:bg-slate-50">
+              <tr key={g.id} className="border-t border-[hsl(var(--border))] hover:bg-[hsl(var(--muted)/0.5)]">
                 <td className="p-3">
-                  <Link href={`/dashboard/groups/${g.id}`} className="font-mono text-[#4a90a4] hover:underline">
+                  <Link
+                    href={`/dashboard/groups/${g.id}`}
+                    className="font-mono text-[hsl(var(--accent))] hover:underline"
+                  >
                     {g.groupCode}
                   </Link>
                 </td>
                 <td className="p-3 font-medium">{g.groupName}</td>
-                <td className="p-3 text-slate-500">{g.company?.companyName ?? "—"}</td>
+                <td className="p-3 text-[hsl(var(--muted-foreground))]">{g.company?.companyName ?? "—"}</td>
                 <td className="p-3 text-xs">
                   {g.arrivalDate.slice(0, 10)} → {g.departureDate.slice(0, 10)}
                 </td>
@@ -118,7 +121,7 @@ export default function GroupsPage() {
           </tbody>
         </table>
         {items.length === 0 && (
-          <p className="text-center text-slate-400 py-12">No group reservations found.</p>
+          <p className="text-center text-[hsl(var(--muted-foreground))] py-12">No group reservations found.</p>
         )}
       </div>
     </div>
@@ -129,11 +132,11 @@ function StatusBadge({ status }: { status: string }) {
   const colors: Record<string, string> = {
     TENTATIVE: "bg-amber-100 text-amber-800",
     CONFIRMED: "bg-emerald-100 text-emerald-800",
-    CLOSED: "bg-slate-100 text-slate-600",
+    CLOSED: "bg-[hsl(var(--muted))] text-[hsl(var(--muted-foreground))]",
     CANCELLED: "bg-red-100 text-red-800",
   };
   return (
-    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${colors[status] ?? "bg-slate-100"}`}>
+    <span className={`msh-badge ${colors[status] ?? "bg-[hsl(var(--muted))]"}`}>
       {status}
     </span>
   );

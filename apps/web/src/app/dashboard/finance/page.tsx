@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
+import { PageHeader } from "@/components/ui/PageHeader";
 
 interface Account {
   accountCode: string;
@@ -63,22 +64,24 @@ export default function FinancePage() {
 
   return (
     <div className="p-6">
-      <h1 className="text-2xl font-semibold text-[#0f2744] mb-1">Finance & Accounting</h1>
-      <p className="text-slate-500 text-sm mb-6">General ledger, trial balance, and financial reports</p>
+      <PageHeader
+        title="Finance & Accounting"
+        description="General ledger, trial balance, and financial reports"
+      />
 
       {pnl && (
         <div className="grid grid-cols-3 gap-4 mb-6">
-          <div className="bg-white rounded-xl border border-slate-200 p-4">
+          <div className="bg-white rounded-xl border border-[hsl(var(--border))] p-4">
             <div className="text-xs text-slate-400 uppercase">Revenue YTD</div>
             <div className="text-2xl font-semibold text-emerald-600">${pnl.totalRevenue.toFixed(2)}</div>
           </div>
-          <div className="bg-white rounded-xl border border-slate-200 p-4">
+          <div className="bg-white rounded-xl border border-[hsl(var(--border))] p-4">
             <div className="text-xs text-slate-400 uppercase">Expenses YTD</div>
             <div className="text-2xl font-semibold text-red-600">${pnl.totalExpenses.toFixed(2)}</div>
           </div>
-          <div className="bg-white rounded-xl border border-slate-200 p-4">
+          <div className="bg-white rounded-xl border border-[hsl(var(--border))] p-4">
             <div className="text-xs text-slate-400 uppercase">Net Income</div>
-            <div className={`text-2xl font-semibold ${pnl.netIncome >= 0 ? "text-[#0f2744]" : "text-red-600"}`}>
+            <div className={`text-2xl font-semibold ${pnl.netIncome >= 0 ? "text-[hsl(var(--primary))]" : "text-red-600"}`}>
               ${pnl.netIncome.toFixed(2)}
             </div>
           </div>
@@ -91,7 +94,7 @@ export default function FinancePage() {
             key={t.id}
             onClick={() => setTab(t.id)}
             className={`px-4 py-2 rounded-lg text-sm ${
-              tab === t.id ? "bg-[#0f2744] text-white" : "bg-white border border-slate-200"
+              tab === t.id ? "bg-[hsl(var(--primary))] text-white" : "bg-white border border-[hsl(var(--border))]"
             }`}
           >
             {t.label}
@@ -100,8 +103,8 @@ export default function FinancePage() {
       </div>
 
       {tab === "trial" && trialBalance && (
-        <section className="bg-white rounded-xl border border-slate-200 p-4">
-          <h2 className="font-semibold text-[#0f2744] mb-3">Trial Balance — {trialBalance.asOf}</h2>
+        <section className="bg-white rounded-xl border border-[hsl(var(--border))] p-4">
+          <h2 className="font-semibold text-[hsl(var(--primary))] mb-3">Trial Balance — {trialBalance.asOf}</h2>
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-slate-400 border-b">
@@ -126,8 +129,8 @@ export default function FinancePage() {
       )}
 
       {tab === "pnl" && pnl && (
-        <section className="bg-white rounded-xl border border-slate-200 p-4">
-          <h2 className="font-semibold text-[#0f2744] mb-3">
+        <section className="bg-white rounded-xl border border-[hsl(var(--border))] p-4">
+          <h2 className="font-semibold text-[hsl(var(--primary))] mb-3">
             Profit & Loss — {pnl.fromDate} to {pnl.toDate}
           </h2>
           <div className="grid md:grid-cols-2 gap-6">
@@ -160,8 +163,8 @@ export default function FinancePage() {
       )}
 
       {tab === "coa" && (
-        <section className="bg-white rounded-xl border border-slate-200 p-4">
-          <h2 className="font-semibold text-[#0f2744] mb-3">Chart of Accounts</h2>
+        <section className="bg-white rounded-xl border border-[hsl(var(--border))] p-4">
+          <h2 className="font-semibold text-[hsl(var(--primary))] mb-3">Chart of Accounts</h2>
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-slate-400 border-b">
@@ -184,13 +187,13 @@ export default function FinancePage() {
       )}
 
       {tab === "journals" && (
-        <section className="bg-white rounded-xl border border-slate-200 p-4">
-          <h2 className="font-semibold text-[#0f2744] mb-3">Recent Journal Entries</h2>
+        <section className="bg-white rounded-xl border border-[hsl(var(--border))] p-4">
+          <h2 className="font-semibold text-[hsl(var(--primary))] mb-3">Recent Journal Entries</h2>
           <ul className="space-y-4">
             {journals.map((j) => (
-              <li key={j.id} className="border border-slate-100 rounded-lg p-3">
+              <li key={j.id} className="border border-[hsl(var(--border))] rounded-lg p-3">
                 <div className="flex justify-between text-sm mb-2">
-                  <span className="font-mono text-[#4a90a4]">{j.entryNumber}</span>
+                  <span className="font-mono text-[hsl(var(--accent))]">{j.entryNumber}</span>
                   <span className="text-slate-400">{j.transactionDate.slice(0, 10)}</span>
                 </div>
                 <p className="text-sm mb-2">{j.description}</p>

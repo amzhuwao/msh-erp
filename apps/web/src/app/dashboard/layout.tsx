@@ -1,17 +1,18 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { clearToken, getStoredUser } from "@/lib/api";
 import { useEffect, useState } from "react";
 
 const nav = [
-  { href: "/dashboard", label: "Front Office" },
-  { href: "/dashboard/groups", label: "Group Reservations" },
-  { href: "/dashboard/housekeeping", label: "Housekeeping" },
-  { href: "/dashboard/pos", label: "Restaurant POS" },
-  { href: "/dashboard/finance", label: "Finance" },
-  { href: "/dashboard/night-audit", label: "Night Audit" },
+  { href: "/dashboard", label: "Front Office", icon: "🏨" },
+  { href: "/dashboard/groups", label: "Group Reservations", icon: "👥" },
+  { href: "/dashboard/housekeeping", label: "Housekeeping", icon: "🛏️" },
+  { href: "/dashboard/pos", label: "Restaurant POS", icon: "🍽️" },
+  { href: "/dashboard/finance", label: "Finance", icon: "📊" },
+  { href: "/dashboard/night-audit", label: "Night Audit", icon: "🌙" },
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -26,44 +27,70 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   if (!user) return null;
 
   return (
-    <div className="min-h-screen flex">
-      <aside className="w-56 bg-[#0f2744] text-white flex flex-col shrink-0">
-        <div className="px-5 py-6 border-b border-white/10">
-          <div className="text-[#c9a227] text-xs font-semibold tracking-widest uppercase">
-            Manica Skyview
+    <div className="min-h-screen flex bg-[hsl(var(--background))]">
+      <aside
+        className="w-64 shrink-0 flex flex-col text-[hsl(var(--sidebar-foreground))]"
+        style={{ background: "hsl(var(--sidebar))" }}
+      >
+        <div className="px-5 py-5 border-b border-[hsl(var(--sidebar-border))]">
+          <div className="flex items-center gap-3">
+            <Image
+              src="/logo.png"
+              alt="Manica Skyview"
+              width={40}
+              height={40}
+              className="rounded-full ring-1 ring-[hsl(var(--accent)/0.4)]"
+            />
+            <div>
+              <div className="text-[hsl(var(--accent))] text-[10px] font-semibold tracking-[0.2em] uppercase">
+                Manica Skyview
+              </div>
+              <div className="text-[hsl(var(--primary-foreground))] text-sm font-medium" style={{ fontFamily: "Playfair Display, Georgia, serif" }}>
+                Administration
+              </div>
+            </div>
           </div>
-          <div className="text-lg font-light mt-1">Hotel ERP</div>
         </div>
-        <nav className="flex-1 py-4">
-          {nav.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`block px-5 py-3 text-sm transition ${
-                pathname === item.href || pathname.startsWith(`${item.href}/`)
-                  ? "bg-white/10 text-[#c9a227] border-r-2 border-[#c9a227]"
-                  : "text-slate-300 hover:bg-white/5 hover:text-white"
-              }`}
-            >
-              {item.label}
-            </Link>
-          ))}
+
+        <nav className="flex-1 py-4 space-y-0.5">
+          {nav.map((item) => {
+            const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={`msh-sidebar-link ${active ? "msh-sidebar-link-active" : ""}`}
+              >
+                <span className="text-base opacity-80">{item.icon}</span>
+                {item.label}
+              </Link>
+            );
+          })}
         </nav>
-        <div className="px-5 py-4 border-t border-white/10 text-sm">
-          <div className="text-white font-medium truncate">{user.fullName}</div>
-          <div className="text-slate-400 text-xs mt-0.5">{user.roleName}</div>
+
+        <div className="px-5 py-4 border-t border-[hsl(var(--sidebar-border))] text-sm">
+          <div className="text-[hsl(var(--primary-foreground))] font-medium truncate">{user.fullName}</div>
+          <div className="text-[hsl(var(--sidebar-foreground))] text-xs mt-0.5 opacity-80">{user.roleName}</div>
           <button
             onClick={() => {
               clearToken();
               router.push("/login");
             }}
-            className="mt-3 text-xs text-slate-400 hover:text-white"
+            className="mt-3 text-xs text-[hsl(var(--sidebar-foreground))] hover:text-[hsl(var(--accent))] transition-colors"
           >
             Sign out
           </button>
         </div>
       </aside>
-      <main className="flex-1 overflow-auto">{children}</main>
+
+      <main className="flex-1 overflow-auto min-h-screen">
+        <div className="border-b border-[hsl(var(--border))] bg-white/80 backdrop-blur-sm sticky top-0 z-10 px-6 py-3">
+          <div className="text-xs text-[hsl(var(--muted-foreground))]">
+            Manica Skyview Hotel · Mutare, Zimbabwe
+          </div>
+        </div>
+        {children}
+      </main>
     </div>
   );
 }

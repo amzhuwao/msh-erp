@@ -54,7 +54,7 @@ export function ArrivalsTab() {
 
   return (
     <div>
-      <h2 className="text-lg font-semibold text-[#0f2744] mb-4">Expected Arrivals Today</h2>
+      <h2 className="text-lg font-semibold text-[hsl(var(--primary))] mb-4">Expected Arrivals Today</h2>
       {items.length === 0 ? (
         <p className="text-slate-500">No arrivals scheduled for today.</p>
       ) : (
@@ -70,7 +70,7 @@ export function ArrivalsTab() {
           </thead>
           <tbody>
             {items.map((item) => (
-              <tr key={item.id} className="border-b border-slate-100">
+              <tr key={item.id} className="border-b border-[hsl(var(--border))]">
                 <td className="py-3 pr-4">
                   <div className="font-medium">{item.guest.firstName} {item.guest.lastName}</div>
                   <div className="text-xs text-slate-400">{item.guest.phone}</div>
@@ -99,7 +99,7 @@ export function ArrivalsTab() {
                   ) : (
                     <button
                       onClick={() => setCheckinId(item.id)}
-                      className="bg-[#0f2744] text-white px-3 py-1.5 rounded text-xs hover:bg-[#1a3a5c]"
+                      className="bg-[hsl(var(--primary))] text-white px-3 py-1.5 rounded text-xs hover:opacity-90"
                     >
                       Check In
                     </button>

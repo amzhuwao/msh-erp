@@ -157,8 +157,8 @@ export default function GroupDetailPage() {
 
       <div className="flex items-start justify-between mt-4 mb-6">
         <div>
-          <div className="text-xs font-mono text-[#4a90a4]">{group.groupCode}</div>
-          <h1 className="text-2xl font-semibold text-[#0f2744]">{group.groupName}</h1>
+          <div className="text-xs font-mono text-[hsl(var(--accent))]">{group.groupCode}</div>
+          <h1 className="text-2xl font-semibold text-[hsl(var(--primary))]">{group.groupName}</h1>
           <p className="text-slate-500 text-sm mt-1">
             {group.company?.companyName ?? "No company"} · {group.contactPerson} · {group.phone}
           </p>
@@ -176,7 +176,7 @@ export default function GroupDetailPage() {
             <button
               onClick={checkInAll}
               disabled={bulkCheckingIn}
-              className="bg-[#4a90a4] text-white px-4 py-2 rounded-lg text-sm disabled:opacity-50"
+              className="bg-[hsl(var(--accent))] text-white px-4 py-2 rounded-lg text-sm disabled:opacity-50"
             >
               {bulkCheckingIn ? "Checking in…" : `Check In All (${pendingGuests.length})`}
             </button>
@@ -190,8 +190,8 @@ export default function GroupDetailPage() {
       </div>
 
       <div className="grid lg:grid-cols-2 gap-6">
-        <section className="bg-white rounded-xl border border-slate-200 p-4">
-          <h2 className="font-semibold text-[#0f2744] mb-3">
+        <section className="bg-white rounded-xl border border-[hsl(var(--border))] p-4">
+          <h2 className="font-semibold text-[hsl(var(--primary))] mb-3">
             Room Allocations ({group.roomAllocations.length}/{group.roomCount})
           </h2>
           {group.status !== "CANCELLED" && group.roomAllocations.length < group.roomCount && (
@@ -202,12 +202,12 @@ export default function GroupDetailPage() {
                   <option key={r.id} value={r.id}>Room {r.number} ({r.roomType.code})</option>
                 ))}
               </select>
-              <button onClick={allocateRoom} className="bg-[#0f2744] text-white px-4 py-2 rounded-lg text-sm">Allocate</button>
+              <button onClick={allocateRoom} className="bg-[hsl(var(--primary))] text-white px-4 py-2 rounded-lg text-sm">Allocate</button>
             </div>
           )}
           <ul className="space-y-2 text-sm">
             {group.roomAllocations.map((a) => (
-              <li key={a.id} className="flex justify-between border-b border-slate-100 py-2">
+              <li key={a.id} className="flex justify-between border-b border-[hsl(var(--border))] py-2">
                 <span>
                   Room <strong>{a.room.number}</strong> ({a.roomType.code})
                   {a.assignedGuestName && <span className="text-slate-400 ml-2">→ {a.assignedGuestName}</span>}
@@ -219,8 +219,8 @@ export default function GroupDetailPage() {
           </ul>
         </section>
 
-        <section className="bg-white rounded-xl border border-slate-200 p-4">
-          <h2 className="font-semibold text-[#0f2744] mb-3">Guest List ({group.guests.length})</h2>
+        <section className="bg-white rounded-xl border border-[hsl(var(--border))] p-4">
+          <h2 className="font-semibold text-[hsl(var(--primary))] mb-3">Guest List ({group.guests.length})</h2>
           <div className="flex gap-2 mb-4">
             <input
               placeholder="Guest full name"
@@ -228,7 +228,7 @@ export default function GroupDetailPage() {
               value={newGuestName}
               onChange={(e) => setNewGuestName(e.target.value)}
             />
-            <button onClick={addGuest} className="bg-[#0f2744] text-white px-4 py-2 rounded-lg text-sm">Add</button>
+            <button onClick={addGuest} className="bg-[hsl(var(--primary))] text-white px-4 py-2 rounded-lg text-sm">Add</button>
           </div>
           <ul className="space-y-2 text-sm max-h-64 overflow-y-auto">
             {group.guests.map((g) => (
@@ -260,8 +260,8 @@ export default function GroupDetailPage() {
       </div>
 
       {group.reservations.length > 0 && (
-        <section className="bg-white rounded-xl border border-slate-200 p-4 mt-6">
-          <h2 className="font-semibold text-[#0f2744] mb-3">Individual Reservations</h2>
+        <section className="bg-white rounded-xl border border-[hsl(var(--border))] p-4 mt-6">
+          <h2 className="font-semibold text-[hsl(var(--primary))] mb-3">Individual Reservations</h2>
           <ul className="space-y-1 text-sm">
             {group.reservations.map((r) => (
               <li key={r.id} className="flex justify-between py-1.5 border-b border-slate-50">
@@ -273,8 +273,8 @@ export default function GroupDetailPage() {
         </section>
       )}
 
-      <section className="bg-white rounded-xl border border-slate-200 p-4 mt-6">
-        <h2 className="font-semibold text-[#0f2744] mb-2">Import Rooming List (CSV)</h2>
+      <section className="bg-white rounded-xl border border-[hsl(var(--border))] p-4 mt-6">
+        <h2 className="font-semibold text-[hsl(var(--primary))] mb-2">Import Rooming List (CSV)</h2>
         <p className="text-xs text-slate-500 mb-2">
           Format: FullName, Nationality, NationalID, Passport, RoomType, VIP, Notes (one guest per line)
         </p>

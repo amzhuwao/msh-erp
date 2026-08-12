@@ -1,13 +1,15 @@
 "use client";
 
+import Image from "next/image";
+import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { login } from "@/lib/api";
 
 export default function LoginPage() {
   const router = useRouter();
-  const [username, setUsername] = useState("reception");
-  const [password, setPassword] = useState("Reception@MSH2026!");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -26,48 +28,72 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#0f2744] via-[#1a3a5c] to-[#4a90a4] p-4">
-      <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden">
-        <div className="bg-[#0f2744] px-8 py-10 text-center">
-          <div className="text-[#c9a227] text-sm font-semibold tracking-widest uppercase mb-2">
-            Manica Skyview
-          </div>
-          <h1 className="text-white text-2xl font-light">Hotel ERP</h1>
-          <p className="text-slate-300 text-sm mt-2">Front Office System</p>
-        </div>
-        <form onSubmit={handleSubmit} className="p-8 space-y-5">
-          {error && (
-            <div className="bg-red-50 text-red-700 text-sm px-4 py-3 rounded-lg border border-red-200">
-              {error}
+    <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-[hsl(var(--background))]">
+      <div className="w-full max-w-md animate-[fade-in_0.4s_ease-out]">
+        <div className="msh-card overflow-hidden shadow-lg">
+          <div className="px-8 pt-10 pb-6 text-center border-b border-[hsl(var(--border))]">
+            <div className="flex justify-center mb-4">
+              <Image
+                src="/logo.png"
+                alt="Manica Skyview Hotel"
+                width={72}
+                height={72}
+                className="rounded-full ring-2 ring-[hsl(var(--accent)/0.3)]"
+                priority
+              />
             </div>
-          )}
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Username</label>
-            <input
-              className="w-full border border-slate-200 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[#4a90a4]"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              autoComplete="username"
-            />
+            <h1 className="text-2xl font-bold text-[hsl(var(--foreground))]">Staff Login</h1>
+            <p className="text-sm text-[hsl(var(--muted-foreground))] mt-1">
+              Manica Skyview Hotel — Administration
+            </p>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Password</label>
-            <input
-              type="password"
-              className="w-full border border-slate-200 rounded-lg px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[#4a90a4]"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoComplete="current-password"
-            />
-          </div>
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-[#0f2744] hover:bg-[#1a3a5c] text-white font-medium py-3 rounded-lg transition disabled:opacity-60"
+
+          <form onSubmit={handleSubmit} className="p-8 space-y-5">
+            {error && (
+              <div className="bg-red-50 text-[hsl(var(--destructive))] text-sm px-4 py-3 rounded-[var(--radius)] border border-red-200">
+                {error}
+              </div>
+            )}
+            <div>
+              <label className="block text-sm font-medium text-[hsl(var(--foreground))] mb-1.5">
+                Staff Email or Username
+              </label>
+              <input
+                className="msh-input"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                autoComplete="username"
+                placeholder="admin or admin@manicaskyview.co.zw"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-[hsl(var(--foreground))] mb-1.5">
+                Password
+              </label>
+              <input
+                type="password"
+                className="msh-input"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
+              />
+            </div>
+            <button type="submit" disabled={loading} className="msh-btn msh-btn-primary w-full py-3">
+              {loading ? "Signing in…" : "Staff Login"}
+            </button>
+          </form>
+        </div>
+
+        <p className="text-center mt-6 text-sm text-[hsl(var(--muted-foreground))]">
+          <Link
+            href="https://manicaskyview.co.zw/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-[hsl(var(--accent))] transition-colors"
           >
-            {loading ? "Signing in…" : "Sign In"}
-          </button>
-        </form>
+            ← Back to Hotel Website
+          </Link>
+        </p>
       </div>
     </div>
   );

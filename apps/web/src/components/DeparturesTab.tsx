@@ -45,7 +45,7 @@ export function DeparturesTab() {
 
   return (
     <div>
-      <h2 className="text-lg font-semibold text-[#0f2744] mb-4">Expected Departures Today</h2>
+      <h2 className="text-lg font-semibold text-[hsl(var(--primary))] mb-4">Expected Departures Today</h2>
       {items.length === 0 ? (
         <p className="text-slate-500">No departures scheduled for today.</p>
       ) : (
@@ -60,7 +60,7 @@ export function DeparturesTab() {
           </thead>
           <tbody>
             {items.map((item) => (
-              <tr key={item.id} className="border-b border-slate-100">
+              <tr key={item.id} className="border-b border-[hsl(var(--border))]">
                 <td className="py-3 pr-4 font-medium">
                   {item.guest.firstName} {item.guest.lastName}
                 </td>
@@ -74,7 +74,7 @@ export function DeparturesTab() {
                   {item.folios[0] && (
                     <button
                       onClick={() => setFolioId(item.folios[0]!.id)}
-                      className="border border-slate-200 px-3 py-1.5 rounded text-xs hover:bg-slate-50"
+                      className="border border-[hsl(var(--border))] px-3 py-1.5 rounded text-xs hover:bg-slate-50"
                     >
                       View Folio
                     </button>
@@ -82,7 +82,7 @@ export function DeparturesTab() {
                   <button
                     onClick={() => handleCheckout(item.id)}
                     disabled={Math.abs(item.folioBalance) > 0.01}
-                    className="bg-[#0f2744] text-white px-3 py-1.5 rounded text-xs hover:bg-[#1a3a5c] disabled:opacity-40"
+                    className="bg-[hsl(var(--primary))] text-white px-3 py-1.5 rounded text-xs hover:opacity-90 disabled:opacity-40"
                   >
                     Check Out
                   </button>

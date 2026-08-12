@@ -7,6 +7,7 @@ import { ArrivalsTab } from "@/components/ArrivalsTab";
 import { DeparturesTab } from "@/components/DeparturesTab";
 import { InHouseTab } from "@/components/InHouseTab";
 import { AvailabilitySearch } from "@/components/AvailabilitySearch";
+import { PageHeader } from "@/components/ui/PageHeader";
 
 interface DashboardStats {
   date: string;
@@ -30,43 +31,36 @@ export default function DashboardPage() {
 
   return (
     <div className="p-6">
-      <header className="mb-6">
-        <h1 className="text-2xl font-semibold text-[#0f2744]">Front Office Dashboard</h1>
-        <p className="text-slate-500 text-sm mt-1">
-          {stats ? `Business date: ${stats.date}` : "Loading…"}
-        </p>
-      </header>
+      <PageHeader
+        title="Front Office Dashboard"
+        description={stats ? `Business date: ${stats.date}` : "Loading property data…"}
+      />
 
       {stats && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-          <StatCard label="Arrivals Today" value={stats.arrivalsToday} color="bg-blue-50 text-blue-700" />
-          <StatCard label="Departures Today" value={stats.departuresToday} color="bg-amber-50 text-amber-700" />
-          <StatCard label="In-House Guests" value={stats.inHouseGuests} color="bg-emerald-50 text-emerald-700" />
+          <StatCard label="Arrivals Today" value={stats.arrivalsToday} />
+          <StatCard label="Departures Today" value={stats.departuresToday} />
+          <StatCard label="In-House Guests" value={stats.inHouseGuests} />
           <StatCard
             label="Inspected Rooms"
             value={stats.roomStatusBreakdown.find((r) => r.status === "INSPECTED")?._count.status ?? 0}
-            color="bg-violet-50 text-violet-700"
           />
         </div>
       )}
 
-      <div className="flex gap-1 border-b border-slate-200 mb-6">
+      <div className="flex gap-1 border-b border-[hsl(var(--border))] mb-6 overflow-x-auto">
         {tabs.map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
-            className={`px-4 py-2.5 text-sm font-medium rounded-t-lg transition ${
-              activeTab === tab
-                ? "bg-white text-[#0f2744] border border-b-white border-slate-200 -mb-px"
-                : "text-slate-500 hover:text-[#0f2744]"
-            }`}
+            className={`msh-tab whitespace-nowrap ${activeTab === tab ? "msh-tab-active" : ""}`}
           >
             {tab}
           </button>
         ))}
       </div>
 
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 min-h-[480px]">
+      <div className="msh-card p-4 md:p-5 min-h-[480px]">
         {activeTab === "Tape Chart" && <TapeChart />}
         {activeTab === "Arrivals" && <ArrivalsTab />}
         {activeTab === "Departures" && <DeparturesTab />}
@@ -77,11 +71,11 @@ export default function DashboardPage() {
   );
 }
 
-function StatCard({ label, value, color }: { label: string; value: number; color: string }) {
+function StatCard({ label, value }: { label: string; value: number }) {
   return (
-    <div className={`rounded-xl p-4 ${color}`}>
-      <div className="text-2xl font-bold">{value}</div>
-      <div className="text-xs font-medium mt-1 opacity-80">{label}</div>
+    <div className="msh-stat-card">
+      <div className="text-2xl font-bold text-[hsl(var(--primary))]">{value}</div>
+      <div className="text-xs font-medium mt-1 text-[hsl(var(--muted-foreground))]">{label}</div>
     </div>
   );
 }
