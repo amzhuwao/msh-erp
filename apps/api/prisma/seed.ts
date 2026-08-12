@@ -9,6 +9,7 @@ const prisma = new PrismaClient();
 
 const receptionistPermissions = {
   Reservations: ["VIEW", "CREATE", "EDIT", "CANCEL"],
+  GroupReservations: ["VIEW", "CREATE", "EDIT"],
   Housekeeping: ["VIEW"],
   Finance: ["VIEW_LIMITED"],
 };
@@ -16,6 +17,7 @@ const receptionistPermissions = {
 const supervisorPermissions = {
   ...receptionistPermissions,
   Reservations: ["VIEW", "CREATE", "EDIT", "CANCEL", "OVERRIDE"],
+  GroupReservations: ["VIEW", "CREATE", "EDIT", "CANCEL"],
   Housekeeping: ["VIEW", "EDIT"],
   Finance: ["VIEW"],
 };
@@ -23,6 +25,7 @@ const supervisorPermissions = {
 const adminPermissions = {
   Auth: ["VIEW", "CREATE", "EDIT", "DELETE"],
   Reservations: ["VIEW", "CREATE", "EDIT", "DELETE", "CANCEL", "OVERRIDE", "EXPORT"],
+  GroupReservations: ["VIEW", "CREATE", "EDIT", "DELETE", "CANCEL", "OVERRIDE", "EXPORT"],
   Housekeeping: ["VIEW", "CREATE", "EDIT", "DELETE", "APPROVE"],
   Finance: ["VIEW", "CREATE", "EDIT", "APPROVE", "EXPORT"],
   Admin: ["VIEW", "CREATE", "EDIT", "DELETE"],
@@ -32,6 +35,12 @@ async function main() {
   console.log("Seeding Manica Skyview Hotel ERP...");
 
   await prisma.housekeepingAssignment.deleteMany();
+  await prisma.groupCharge.deleteMany();
+  await prisma.groupInvoice.deleteMany();
+  await prisma.groupGuest.deleteMany();
+  await prisma.groupRoom.deleteMany();
+  await prisma.groupReservation.deleteMany();
+  await prisma.corporateProfile.deleteMany();
   await prisma.auditLog.deleteMany();
   await prisma.folioLine.deleteMany();
   await prisma.folio.deleteMany();
@@ -82,6 +91,15 @@ async function main() {
     },
   });
 
+  await prisma.documentNumberingPattern.create({
+    data: {
+      module: DocumentModule.GROUP_RESERVATIONS,
+      prefix: "MSV-GRP-2026-",
+      currentSequence: 1,
+      paddingDigits: 4,
+    },
+  });
+
   await prisma.taxRateDefinition.createMany({
     data: [
       { name: "VAT 15%", code: "VAT_15", ratePercent: 0.15, isActive: true },
@@ -95,6 +113,10 @@ async function main() {
 
   const housekeeping = await prisma.department.create({
     data: { name: "Housekeeping" },
+  });
+
+  const salesDept = await prisma.department.create({
+    data: { name: "Sales & Marketing" },
   });
 
   const adminRole = await prisma.role.create({
@@ -212,6 +234,76 @@ async function main() {
       roleId: supervisorRole.id,
     },
   });
+  await prisma.user.create({
+    data: {
+      username: "sales",
+      email: "sales@manicaskyview.co.zw",
+      passwordHash: await bcrypt.hash("Sales@MSH2026!", 12),
+      fullName: "Sales Coordinator",
+      departmentId: salesDept.id,
+      roleId: supervisorRole.id,
+    },
+  });
+
+  const minOfHealth = await prisma.corporateProfile.create({
+    data: {
+      companyName: "Ministry of Health — Manicaland",
+      registrationNumber: "GOV-MOH-MAN-001",
+      contactName: "T. Moyo",
+      contactEmail: "bookings@health.gov.zw",
+      phone: "+263 20 12345",
+      creditLimit: 50000,
+      isCreditApproved: true,
+    },
+  });
+
+  await prisma.corporateProfile.create({
+    data: {
+      companyName: "Zimbabwe Mining Consortium",
+      registrationNumber: "ZMC-2019-442",
+      contactName: "R. Chikwanha",
+      contactEmail: "travel@zmc.co.zw",
+      phone: "+263 772 000111",
+      creditLimit: 25000,
+      isCreditApproved: true,
+    },
+  });
+
+  // Sample tentative group booking
+  const adminUser = await prisma.user.findUnique({ where: { username: "admin" } });
+  if (adminUser) {
+    await prisma.groupReservation.create({
+      data: {
+        groupCode: "MSV-GRP-2026-0001",
+        groupName: "MOH Annual Conference Delegates",
+        companyId: minOfHealth.id,
+        contactPerson: "T. Moyo",
+        phone: "+263 20 12345",
+        email: "bookings@health.gov.zw",
+        arrivalDate: new Date("2026-09-01"),
+        departureDate: new Date("2026-09-05"),
+        adults: 40,
+        children: 0,
+        roomCount: 15,
+        status: "TENTATIVE",
+        depositAmount: 5000,
+        specialRequests: "Late checkout on final day, conference shuttle required",
+        createdById: adminUser.id,
+        guests: {
+          create: [
+            { fullName: "Dr. Grace Mutasa", nationality: "Zimbabwe", roomTypeCode: "DLX", vipStatus: "VIP1" },
+            { fullName: "Mr. Peter Ndlovu", nationality: "Zimbabwe", roomTypeCode: "STD" },
+            { fullName: "Ms. Sarah Chiteve", nationality: "Zimbabwe", roomTypeCode: "STD" },
+          ],
+        },
+      },
+    });
+    await prisma.documentNumberingPattern.update({
+      where: { module: DocumentModule.GROUP_RESERVATIONS },
+      data: { currentSequence: 2 },
+    });
+  }
+
   console.log("Seed complete.");
   console.log(`Property: ${property.propertyName}`);
   console.log("Default logins:");
@@ -219,6 +311,7 @@ async function main() {
   console.log("  reception / Reception@MSH2026!");
   console.log("  fosupervisor / Supervisor@MSH2026!");
   console.log("  housekeeping / Housekeeping@MSH2026!");
+  console.log("  sales / Sales@MSH2026!");
 }
 
 main()
