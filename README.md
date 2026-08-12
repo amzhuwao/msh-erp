@@ -16,6 +16,7 @@ Property Management System for **Manica Skyview Hotel**, Mutare, Zimbabwe.
 | `admin` | `Admin@MSH2026!` | System Administrator |
 | `reception` | `Reception@MSH2026!` | Receptionist |
 | `fosupervisor` | `Supervisor@MSH2026!` | Front Office Supervisor |
+| `housekeeping` | `Housekeeping@MSH2026!` | Housekeeping Supervisor |
 | `sales` | `Sales@MSH2026!` | Sales Coordinator |
 
 ## Features
