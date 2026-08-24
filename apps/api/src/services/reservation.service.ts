@@ -88,6 +88,7 @@ export async function createReservation(input: {
   adults: number;
   children: number;
   specialRequests?: string;
+  guestPaymentMethod?: string;
   source?: BookingSource;
   createdById: string;
   ipAddress?: string;
@@ -140,6 +141,7 @@ export async function createReservation(input: {
         adults: input.adults,
         children: input.children,
         specialRequests: input.specialRequests,
+        guestPaymentMethod: input.guestPaymentMethod,
         status: ReservationStatus.CONFIRMED,
         source,
         createdById: input.createdById,

@@ -13,6 +13,7 @@ import { frontOfficeRouter } from "./routes/front-office.routes.js";
 import { groupReservationsRouter } from "./routes/group-reservations.routes.js";
 import { guestServicesRouter } from "./routes/guest-services.routes.js";
 import { guestsRouter } from "./routes/guests.routes.js";
+import { guestRouter } from "./routes/guest.routes.js";
 import { healthRouter } from "./routes/health.js";
 import { housekeepingRouter } from "./routes/housekeeping.routes.js";
 import { integrationsRouter } from "./routes/integrations.routes.js";
@@ -41,7 +42,7 @@ app.get("/", (_req, res) => {
   res.json({
     name: "Manica Skyview Hotel ERP",
     property: "Manica Skyview Hotel",
-    version: "0.6.0",
+    version: "0.7.0",
     modules: [
       "Auth", "Reservations", "GroupReservations", "Housekeeping", "POS", "Conference",
       "Inventory", "Procurement", "Finance", "Maintenance", "CRM", "Corporate",
@@ -52,6 +53,7 @@ app.get("/", (_req, res) => {
 
 app.use("/api/health", healthRouter);
 app.use("/api/public", publicRouter);
+app.use("/api/guest", guestRouter);
 app.use("/api/auth", authRouter);
 app.use("/api/property", propertyRouter);
 app.use("/api/guests", guestsRouter);

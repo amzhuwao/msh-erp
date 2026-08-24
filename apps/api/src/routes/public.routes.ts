@@ -3,11 +3,16 @@ import { z } from "zod";
 import { asyncHandler, getClientIp, validateBody, validateQuery } from "../middleware/http.js";
 import { searchAvailability } from "../services/reservation.service.js";
 import { createOnlineBooking, publicProperty } from "../services/public-booking.service.js";
+import { publicRoomCatalog } from "../services/guest-portal.service.js";
 
 export const publicRouter = Router();
 
 publicRouter.get("/property", asyncHandler(async (_req, res) => {
   res.json(await publicProperty());
+}));
+
+publicRouter.get("/rooms", asyncHandler(async (_req, res) => {
+  res.json(await publicRoomCatalog());
 }));
 
 publicRouter.get("/availability", asyncHandler(async (req, res) => {
@@ -35,12 +40,24 @@ publicRouter.post("/bookings", asyncHandler(async (req, res) => {
     children: z.number().int().min(0).optional(),
     ratePlanId: z.string(),
     specialRequests: z.string().optional(),
+    paymentMethod: z.enum(["pay_on_arrival", "bank_transfer"]).optional(),
+    gender: z.string().optional(),
+    companyName: z.string().optional(),
+    address: z.string().optional(),
+    idPassport: z.string().optional(),
   }).superRefine((data, ctx) => {
-    if (!data.nationalId?.trim() && !data.passportNumber?.trim()) {
+    const id = data.nationalId?.trim() || data.passportNumber?.trim() || data.idPassport?.trim();
+    if (!id) {
       ctx.addIssue({ code: "custom", message: "National ID or passport is required", path: ["nationalId"] });
     }
   }), req);
 
-  const result = await createOnlineBooking({ ...body, ipAddress: getClientIp(req) });
+  const idPassport = body.idPassport?.trim();
+  const result = await createOnlineBooking({
+    ...body,
+    nationalId: body.nationalId ?? (idPassport && !/[A-Za-z]/.test(idPassport) ? idPassport : undefined),
+    passportNumber: body.passportNumber ?? (idPassport && /[A-Za-z]/.test(idPassport) ? idPassport : idPassport),
+    ipAddress: getClientIp(req),
+  });
   res.status(201).json(result);
 }));

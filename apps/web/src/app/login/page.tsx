@@ -85,7 +85,7 @@ export default function LoginPage() {
         </div>
 
         <p className="text-center mt-6 text-sm text-[hsl(var(--muted-foreground))]">
-          <Link href="/book" className="hover:text-[hsl(var(--accent))] transition-colors mr-4">Book online</Link>
+          <Link href="/" className="hover:text-[hsl(var(--accent))] transition-colors mr-4">Guest Portal</Link>
           <Link
             href="https://manicaskyview.co.zw/"
             target="_blank"
