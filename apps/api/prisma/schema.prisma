@@ -10,18 +10,30 @@ datasource db {
 // ─── Module 18: System Administration ───────────────────────────────────────
 
 model PropertyConfiguration {
-  id              String   @id @default(cuid())
-  propertyName    String
-  address         String
-  vatNumber       String?
-  primaryCurrency String   @default("USD")
-  contactEmail    String?
-  contactPhone    String?
-  checkInTime     String   @default("14:00")
-  checkOutTime    String   @default("10:00")
-  logoUrl         String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id                String   @id @default(cuid())
+  propertyName      String
+  address           String
+  vatNumber         String?
+  bpNumber          String?
+  primaryCurrency   String   @default("USD")
+  contactEmail      String?
+  contactPhone      String?
+  netoneNumber      String?
+  whatsappNumber    String?
+  receptionEmail    String?
+  checkInTime       String   @default("14:00")
+  checkOutTime      String   @default("10:00")
+  logoUrl           String?
+  bankName          String?
+  bankBranch        String?
+  bankAccountName   String?
+  bankAccountNumber String?
+  bankSwiftCode     String?
+  ecocashNumber     String?
+  ecocashMerchant   String?
+  onemoneyNumber    String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   @@map("property_configuration")
 }
@@ -298,6 +310,15 @@ enum ReservationStatus {
   NO_SHOW
 }
 
+enum BookingSource {
+  WALK_IN
+  PHONE
+  ONLINE
+  OTA
+  AGENT
+  GROUP
+}
+
 enum VipStatus {
   NONE
   VIP1
@@ -341,8 +362,9 @@ model Reservation {
   adults            Int                        @default(1)
   children          Int                        @default(0)
   status            ReservationStatus          @default(TENTATIVE)
-  specialRequests   String?
+  specialRequests    String?
   cancellationReason String?
+  source             BookingSource @default(WALK_IN)
   groupReservationId String?
   groupReservation   GroupReservation?   @relation(fields: [groupReservationId], references: [id])
   createdById       String
@@ -396,6 +418,8 @@ model Folio {
   guestId       String
   guest         Guest         @relation(fields: [guestId], references: [id])
   status        FolioStatus   @default(OPEN)
+  invoiceNumber String?       @unique
+  receiptNumber String?       @unique
   lines         FolioLine[]
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
@@ -405,16 +429,23 @@ model Folio {
 }
 
 model FolioLine {
-  id          String        @id @default(cuid())
-  folioId     String
-  folio       Folio         @relation(fields: [folioId], references: [id], onDelete: Cascade)
-  lineType    FolioLineType
-  description String
-  amount      Decimal       @db.Decimal(10, 2)
-  postedById  String?
-  createdAt   DateTime      @default(now())
+  id             String        @id @default(cuid())
+  folioId        String
+  folio          Folio         @relation(fields: [folioId], references: [id], onDelete: Cascade)
+  lineType       FolioLineType
+  description    String
+  amount         Decimal       @db.Decimal(10, 2)
+  department     String?
+  taxRate        Decimal       @default(0.15) @db.Decimal(5, 4)
+  netAmount      Decimal       @default(0) @db.Decimal(10, 2)
+  vatAmount      Decimal       @default(0) @db.Decimal(10, 2)
+  levyAmount     Decimal       @default(0) @db.Decimal(10, 2)
+  paymentMethod  String?
+  postedById     String?
+  createdAt      DateTime      @default(now())
 
   @@index([folioId])
+  @@index([department])
   @@map("folio_lines")
 }
 
@@ -594,6 +625,9 @@ enum PosPaymentMethod {
   CARD
   MOBILE
   ROOM_CHARGE
+  BANK_TRANSFER
+  ECOCASH
+  ONEMONEY
 }
 
 enum PosSessionStatus {
@@ -625,6 +659,7 @@ model MenuItem {
   price      Decimal        @db.Decimal(10, 2)
   cost       Decimal        @default(0) @db.Decimal(10, 2)
   taxRate    Decimal        @default(0.15) @db.Decimal(5, 4)
+  mealPeriod String?
   isActive   Boolean        @default(true)
   orderItems PosOrderItem[]
   recipes    RecipeComponent[]
@@ -1482,11 +1517,30 @@ enum TransitType {
   TOURS
 }
 
+model ServiceCatalogItem {
+  id          String              @id @default(cuid())
+  code        String              @unique
+  name        String
+  category    String
+  mealPeriod  String?
+  price       Decimal             @db.Decimal(10, 2)
+  taxRate     Decimal             @default(0.15) @db.Decimal(5, 4)
+  isActive    Boolean             @default(true)
+  orders      GuestServiceOrder[]
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  @@index([category])
+  @@map("service_catalog_items")
+}
+
 model GuestServiceOrder {
   id                  String             @id @default(cuid())
   serviceNumber       String             @unique
   reservationId       String
   reservation         Reservation        @relation(fields: [reservationId], references: [id])
+  catalogItemId       String?
+  catalogItem         ServiceCatalogItem? @relation(fields: [catalogItemId], references: [id])
   serviceType         GuestServiceType
   runnerUserId        String?
   runner              User?              @relation("ServiceRunner", fields: [runnerUserId], references: [id])
@@ -1501,6 +1555,7 @@ model GuestServiceOrder {
   updatedAt           DateTime           @updatedAt
 
   @@index([reservationId])
+  @@index([catalogItemId])
   @@index([status])
   @@map("guest_service_orders")
 }

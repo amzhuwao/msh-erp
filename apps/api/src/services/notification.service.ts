@@ -123,3 +123,78 @@ export async function updateConsent(guestId: string, channel: "EMAIL" | "SMS", i
     update: { isOptIn, updatedDate: new Date() },
   });
 }
+
+async function deliverEmail(to: string, subject: string, body: string) {
+  const host = process.env.SMTP_HOST;
+  if (!host) {
+    return { delivered: false, reason: "SMTP not configured — queued for reception inbox" };
+  }
+  try {
+    const nodemailer = await import("nodemailer");
+    const transporter = nodemailer.createTransport({
+      host,
+      port: Number(process.env.SMTP_PORT ?? 587),
+      secure: process.env.SMTP_SECURE === "true",
+      auth: process.env.SMTP_USER
+        ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
+        : undefined,
+    });
+    await transporter.sendMail({
+      from: process.env.SMTP_FROM ?? process.env.SMTP_USER ?? "noreply@manicaskyview.co.zw",
+      to,
+      subject,
+      text: body,
+    });
+    return { delivered: true };
+  } catch (error) {
+    return { delivered: false, reason: error instanceof Error ? error.message : "Email send failed" };
+  }
+}
+
+export async function notifyReceptionOfOnlineBooking(reservation: {
+  reservationNumber: string;
+  checkInDate: Date;
+  checkOutDate: Date;
+  adults: number;
+  guest: { firstName: string; lastName: string; email: string; phone: string | null; nationality: string | null };
+  ratePlan: { name: string; roomType: { name: string } };
+}) {
+  const property = await prisma.propertyConfiguration.findFirst();
+  const to = property?.receptionEmail || "reception@manicaskyview.co.zw";
+  const subject = `Online booking ${reservation.reservationNumber}`;
+  const body = [
+    `A guest booked online.`,
+    ``,
+    `Booking: ${reservation.reservationNumber}`,
+    `Guest: ${reservation.guest.firstName} ${reservation.guest.lastName}`,
+    `Email: ${reservation.guest.email}`,
+    `Phone: ${reservation.guest.phone ?? "—"}`,
+    `Nationality: ${reservation.guest.nationality ?? "—"}`,
+    `Room type: ${reservation.ratePlan.roomType.name}`,
+    `Rate: ${reservation.ratePlan.name}`,
+    `Arrive: ${reservation.checkInDate.toISOString().slice(0, 10)}`,
+    `Depart: ${reservation.checkOutDate.toISOString().slice(0, 10)}`,
+    `Adults: ${reservation.adults}`,
+  ].join("\n");
+
+  const delivery = await deliverEmail(to, subject, body);
+  const item = await prisma.notificationQueue.create({
+    data: {
+      recipientContact: to,
+      channel: NotificationChannel.EMAIL,
+      subject,
+      body,
+      scheduledTime: new Date(),
+      status: delivery.delivered ? NotificationStatus.SENT : NotificationStatus.PENDING,
+      sentTime: delivery.delivered ? new Date() : null,
+      errorMessage: delivery.delivered ? null : delivery.reason,
+    },
+  });
+  await writeAuditLog({
+    module: "Notifications",
+    action: "ONLINE_BOOKING_ALERT",
+    entityType: "Reservation",
+    details: { reservationNumber: reservation.reservationNumber, to, delivered: delivery.delivered },
+  });
+  return item;
+}

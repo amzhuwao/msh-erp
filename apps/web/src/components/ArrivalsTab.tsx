@@ -8,7 +8,7 @@ interface Arrival {
   reservationNumber: string;
   checkInDate: string;
   status: string;
-  guest: { firstName: string; lastName: string; phone?: string };
+  guest: { firstName: string; lastName: string; phone?: string; nationality?: string; nationalId?: string; passportNumber?: string };
   room: { number: string; roomType: { name: string } } | null;
   ratePlan: { name: string };
 }
@@ -18,6 +18,9 @@ export function ArrivalsTab() {
   const [loading, setLoading] = useState(true);
   const [checkinId, setCheckinId] = useState<string | null>(null);
   const [roomId, setRoomId] = useState("");
+  const [nationality, setNationality] = useState("Zimbabwe");
+  const [nationalId, setNationalId] = useState("");
+  const [passportNumber, setPassportNumber] = useState("");
   const [rooms, setRooms] = useState<{ id: string; number: string; status: string }[]>([]);
 
   useEffect(() => {
@@ -35,12 +38,19 @@ export function ArrivalsTab() {
       .finally(() => setLoading(false));
   }
 
+  function startCheckIn(item: Arrival) {
+    setCheckinId(item.id);
+    setNationality(item.guest.nationality || "Zimbabwe");
+    setNationalId(item.guest.nationalId || "");
+    setPassportNumber(item.guest.passportNumber || "");
+  }
+
   async function handleCheckIn() {
     if (!checkinId || !roomId) return;
     try {
       await apiFetch(`/api/reservations/${checkinId}/checkin`, {
         method: "POST",
-        body: JSON.stringify({ roomId, nationalId: "PENDING" }),
+        body: JSON.stringify({ roomId, nationality, nationalId: nationalId || undefined, passportNumber: passportNumber || undefined }),
       });
       setCheckinId(null);
       setRoomId("");
@@ -51,6 +61,8 @@ export function ArrivalsTab() {
   }
 
   if (loading) return <div className="text-slate-500 p-8 text-center">Loading arrivals…</div>;
+
+  const today = new Date().toISOString().slice(0, 10);
 
   return (
     <div>
@@ -69,44 +81,44 @@ export function ArrivalsTab() {
             </tr>
           </thead>
           <tbody>
-            {items.map((item) => (
-              <tr key={item.id} className="border-b border-[hsl(var(--border))]">
-                <td className="py-3 pr-4">
-                  <div className="font-medium">{item.guest.firstName} {item.guest.lastName}</div>
-                  <div className="text-xs text-slate-400">{item.guest.phone}</div>
-                </td>
-                <td className="py-3 pr-4 font-mono text-xs">{item.reservationNumber}</td>
-                <td className="py-3 pr-4">{item.ratePlan.name}</td>
-                <td className="py-3 pr-4">{item.room?.number ?? "—"}</td>
-                <td className="py-3">
-                  {checkinId === item.id ? (
-                    <div className="flex gap-2 items-center">
-                      <select
-                        className="border rounded px-2 py-1 text-xs"
-                        value={roomId}
-                        onChange={(e) => setRoomId(e.target.value)}
-                      >
-                        <option value="">Select room</option>
-                        {rooms.map((r) => (
-                          <option key={r.id} value={r.id}>Room {r.number}</option>
-                        ))}
-                      </select>
-                      <button onClick={handleCheckIn} className="bg-emerald-600 text-white px-3 py-1 rounded text-xs">
-                        Confirm
+            {items.map((item) => {
+              const stayDate = item.checkInDate.slice(0, 10);
+              const tooEarly = stayDate > today;
+              return (
+                <tr key={item.id} className="border-b border-[hsl(var(--border))]">
+                  <td className="py-3 pr-4">
+                    <div className="font-medium">{item.guest.firstName} {item.guest.lastName}</div>
+                    <div className="text-xs text-slate-400">{item.guest.phone} · {stayDate}</div>
+                  </td>
+                  <td className="py-3 pr-4 font-mono text-xs">{item.reservationNumber}</td>
+                  <td className="py-3 pr-4">{item.ratePlan.name}</td>
+                  <td className="py-3 pr-4">{item.room?.number ?? "—"}</td>
+                  <td className="py-3">
+                    {tooEarly ? (
+                      <span className="text-xs text-amber-700">Check-in on {stayDate} only</span>
+                    ) : checkinId === item.id ? (
+                      <div className="space-y-2">
+                        <select className="border rounded px-2 py-1 text-xs" value={roomId} onChange={(e) => setRoomId(e.target.value)}>
+                          <option value="">Select room</option>
+                          {rooms.map((r) => <option key={r.id} value={r.id}>Room {r.number}</option>)}
+                        </select>
+                        <input className="border rounded px-2 py-1 text-xs w-full" placeholder="Nationality" value={nationality} onChange={(e) => setNationality(e.target.value)} />
+                        <input className="border rounded px-2 py-1 text-xs w-full" placeholder="National ID" value={nationalId} onChange={(e) => setNationalId(e.target.value)} />
+                        <input className="border rounded px-2 py-1 text-xs w-full" placeholder="Passport if no ID" value={passportNumber} onChange={(e) => setPassportNumber(e.target.value)} />
+                        <div className="flex gap-2">
+                          <button onClick={handleCheckIn} className="bg-emerald-600 text-white px-3 py-1 rounded text-xs">Confirm</button>
+                          <button onClick={() => setCheckinId(null)} className="text-slate-400 text-xs">Cancel</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button onClick={() => startCheckIn(item)} className="bg-[hsl(var(--primary))] text-white px-3 py-1.5 rounded text-xs hover:opacity-90">
+                        Check In
                       </button>
-                      <button onClick={() => setCheckinId(null)} className="text-slate-400 text-xs">Cancel</button>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={() => setCheckinId(item.id)}
-                      className="bg-[hsl(var(--primary))] text-white px-3 py-1.5 rounded text-xs hover:opacity-90"
-                    >
-                      Check In
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       )}

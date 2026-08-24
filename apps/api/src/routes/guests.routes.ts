@@ -7,6 +7,7 @@ import { authenticate, authorize } from "../middleware/auth.js";
 import { asyncHandler, getClientIp, validateBody, validateQuery } from "../middleware/http.js";
 import { paramId } from "../lib/params.js";
 import { writeAuditLog } from "../services/system.service.js";
+import { assertGuestIdentity } from "../lib/identity.js";
 
 export const guestsRouter = Router();
 
@@ -17,11 +18,19 @@ const guestBodySchema = z.object({
   lastName: z.string().min(1),
   email: z.string().email(),
   phone: z.string().optional(),
-  nationality: z.string().optional(),
+  nationality: z.string().min(2, "Nationality is required"),
   nationalId: z.string().optional(),
   passportNumber: z.string().optional(),
   vipStatus: z.nativeEnum(VipStatus).optional(),
   notes: z.string().optional(),
+}).superRefine((data, ctx) => {
+  if (!data.nationalId?.trim() && !data.passportNumber?.trim()) {
+    ctx.addIssue({
+      code: "custom",
+      message: "National ID or passport number is required",
+      path: ["nationalId"],
+    });
+  }
 });
 
 const listQuerySchema = z.object({
@@ -88,6 +97,7 @@ guestsRouter.post(
   authorize("Reservations", "CREATE"),
   asyncHandler(async (req, res) => {
     const body = validateBody(guestBodySchema, req);
+    assertGuestIdentity(body);
     const guest = await prisma.guest.create({ data: body });
 
     await writeAuditLog({
@@ -108,6 +118,15 @@ guestsRouter.put(
   authorize("Reservations", "EDIT"),
   asyncHandler(async (req, res) => {
     const body = validateBody(guestBodySchema.partial(), req);
+    if (body.nationality !== undefined || body.nationalId !== undefined || body.passportNumber !== undefined) {
+      const existing = await prisma.guest.findUnique({ where: { id: paramId(req.params.id) } });
+      if (!existing) throw new AppError(404, "GST-001", "Guest not found");
+      assertGuestIdentity({
+        nationality: body.nationality ?? existing.nationality,
+        nationalId: body.nationalId ?? existing.nationalId,
+        passportNumber: body.passportNumber ?? existing.passportNumber,
+      });
+    }
     const guest = await prisma.guest.update({
       where: { id: paramId(req.params.id) },
       data: body,

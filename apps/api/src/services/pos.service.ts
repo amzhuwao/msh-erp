@@ -258,11 +258,13 @@ export async function payPosOrder(input: {
 
     const validation = await validateRoomCharge(input.roomNumber);
     const description = `POS ${order.outlet.name} — ${order.orderNumber}`;
+    const department = order.outlet.code === "LOUNGE" ? "BAR" : "RESTAURANT";
 
     await postFolioCharge({
       folioId: validation.folioId!,
       description,
       amount: Number(order.totalAmount),
+      department,
       userId: input.userId,
       ipAddress: input.ipAddress,
     });

@@ -70,6 +70,7 @@ async function main() {
   await prisma.laundryItemLine.deleteMany();
   await prisma.transitLog.deleteMany();
   await prisma.guestServiceOrder.deleteMany();
+  await prisma.serviceCatalogItem.deleteMany();
   await prisma.supplierInvoice.deleteMany();
   await prisma.goodsReceivedNote.deleteMany();
   await prisma.purchaseOrderItem.deleteMany();
@@ -131,13 +132,25 @@ async function main() {
   const property = await prisma.propertyConfiguration.create({
     data: {
       propertyName: "Manica Skyview Hotel",
-      address: "Mutare, Manicaland, Zimbabwe",
+      address: "No. 77 Second Street, Cnr Seventh Avenue, Mutare, Zimbabwe",
       vatNumber: "MSH-VAT-001",
+      bpNumber: "2000000000",
       primaryCurrency: "USD",
       contactEmail: "info@manicaskyview.co.zw",
-      contactPhone: "+263 20 60000",
+      contactPhone: "+263 20 206 6101",
+      netoneNumber: "+263 71 206 6101",
+      whatsappNumber: "+263 78 640 7580",
+      receptionEmail: "reception@manicaskyview.co.zw",
       checkInTime: "14:00",
       checkOutTime: "10:00",
+      bankName: "CBZ Bank",
+      bankBranch: "Mutare",
+      bankAccountName: "Manica Skyview Hotel",
+      bankAccountNumber: "0123456789012",
+      bankSwiftCode: "COBZZWHA",
+      ecocashNumber: "+263 78 640 7580",
+      ecocashMerchant: "12345",
+      onemoneyNumber: "+263 71 206 6101",
     },
   });
 
@@ -199,6 +212,12 @@ async function main() {
   });
   await prisma.documentNumberingPattern.create({
     data: { module: DocumentModule.GUEST_SERVICES, prefix: "GSO-2026-", currentSequence: 1, paddingDigits: 4 },
+  });
+  await prisma.documentNumberingPattern.create({
+    data: { module: DocumentModule.INVOICES, prefix: "MSV-INV-2026-", currentSequence: 1, paddingDigits: 5 },
+  });
+  await prisma.documentNumberingPattern.create({
+    data: { module: DocumentModule.RECEIPTS, prefix: "MSV-RCT-2026-", currentSequence: 1, paddingDigits: 5 },
   });
 
   await prisma.taxRateDefinition.createMany({
@@ -360,6 +379,17 @@ async function main() {
     },
   });
 
+  await prisma.user.create({
+    data: {
+      username: "website",
+      email: "website@manicaskyview.co.zw",
+      passwordHash: await bcrypt.hash("Website@MSH2026!", 12),
+      fullName: "Online Booking Engine",
+      departmentId: frontOffice.id,
+      roleId: receptionistRole.id,
+    },
+  });
+
   const minOfHealth = await prisma.corporateProfile.create({
     data: {
       companyName: "Ministry of Health — Manicaland",
@@ -468,8 +498,11 @@ async function main() {
     { accountCode: "1200", accountName: "Guest Ledger", accountType: "ASSET" as const },
     { accountCode: "1300", accountName: "Accounts Receivable", accountType: "ASSET" as const },
     { accountCode: "2200", accountName: "VAT Output Liability", accountType: "LIABILITY" as const },
+    { accountCode: "2300", accountName: "ZTA Tourism Levy Payable", accountType: "LIABILITY" as const },
     { accountCode: "4100", accountName: "Room Revenue", accountType: "REVENUE" as const },
     { accountCode: "4200", accountName: "Food & Beverage Revenue", accountType: "REVENUE" as const },
+    { accountCode: "4300", accountName: "Conference Revenue", accountType: "REVENUE" as const },
+    { accountCode: "4400", accountName: "Guest Services Revenue", accountType: "REVENUE" as const },
     { accountCode: "5100", accountName: "Operating Expenses", accountType: "EXPENSE" as const },
   ];
   for (const acct of coaData) {
@@ -490,15 +523,53 @@ async function main() {
   });
 
   const menuItems = [
-    { outletId: restaurant.id, code: "BRK-001", name: "Full English Breakfast", category: "Breakfast", price: 12, cost: 4 },
-    { outletId: restaurant.id, code: "MNS-001", name: "Grilled Beef Steak", category: "Mains", price: 22, cost: 9 },
-    { outletId: restaurant.id, code: "MNS-002", name: "Grilled Tilapia", category: "Mains", price: 18, cost: 7 },
-    { outletId: restaurant.id, code: "DSR-001", name: "Chocolate Mousse", category: "Desserts", price: 8, cost: 2.5 },
-    { outletId: lounge.id, code: "BEV-001", name: "Local Lager 500ml", category: "Beverages", price: 4, cost: 1.2 },
-    { outletId: lounge.id, code: "BEV-002", name: "House Wine Glass", category: "Beverages", price: 6, cost: 2 },
-    { outletId: lounge.id, code: "SNK-001", name: "Mixed Nuts Bowl", category: "Snacks", price: 5, cost: 1.5 },
+    { outletId: restaurant.id, code: "BRK-001", name: "Full English Breakfast", category: "Breakfast", mealPeriod: "BREAKFAST", price: 12, cost: 4 },
+    { outletId: restaurant.id, code: "BRK-002", name: "Continental Breakfast", category: "Breakfast", mealPeriod: "BREAKFAST", price: 9, cost: 3 },
+    { outletId: restaurant.id, code: "BRK-003", name: "Sadza, stew & greens", category: "Breakfast", mealPeriod: "BREAKFAST", price: 8, cost: 2.5 },
+    { outletId: restaurant.id, code: "BRK-004", name: "Eggs Benedict", category: "Breakfast", mealPeriod: "BREAKFAST", price: 11, cost: 3.5 },
+    { outletId: restaurant.id, code: "BRK-005", name: "Fresh fruit platter", category: "Breakfast", mealPeriod: "BREAKFAST", price: 7, cost: 2 },
+    { outletId: restaurant.id, code: "LCH-001", name: "Chicken schnitzel", category: "Lunch", mealPeriod: "LUNCH", price: 16, cost: 6 },
+    { outletId: restaurant.id, code: "LCH-002", name: "Beef burger & fries", category: "Lunch", mealPeriod: "LUNCH", price: 14, cost: 5 },
+    { outletId: restaurant.id, code: "LCH-003", name: "Club sandwich", category: "Lunch", mealPeriod: "LUNCH", price: 12, cost: 4 },
+    { outletId: restaurant.id, code: "LCH-004", name: "Caesar salad", category: "Lunch", mealPeriod: "LUNCH", price: 10, cost: 3.5 },
+    { outletId: restaurant.id, code: "LCH-005", name: "Sadza & nyama", category: "Lunch", mealPeriod: "LUNCH", price: 13, cost: 5 },
+    { outletId: restaurant.id, code: "LCH-006", name: "Fish & chips", category: "Lunch", mealPeriod: "LUNCH", price: 15, cost: 5.5 },
+    { outletId: restaurant.id, code: "MNS-001", name: "Grilled beef steak", category: "Dinner", mealPeriod: "DINNER", price: 22, cost: 9 },
+    { outletId: restaurant.id, code: "MNS-002", name: "Grilled tilapia", category: "Dinner", mealPeriod: "DINNER", price: 18, cost: 7 },
+    { outletId: restaurant.id, code: "MNS-003", name: "Chicken supreme", category: "Dinner", mealPeriod: "DINNER", price: 17, cost: 6.5 },
+    { outletId: restaurant.id, code: "MNS-004", name: "Lamb chops", category: "Dinner", mealPeriod: "DINNER", price: 24, cost: 10 },
+    { outletId: restaurant.id, code: "MNS-005", name: "Vegetable curry & rice", category: "Dinner", mealPeriod: "DINNER", price: 14, cost: 4 },
+    { outletId: restaurant.id, code: "DSR-001", name: "Chocolate mousse", category: "Desserts", mealPeriod: "DINNER", price: 8, cost: 2.5 },
+    { outletId: restaurant.id, code: "DSR-002", name: "Malva pudding", category: "Desserts", mealPeriod: "DINNER", price: 7, cost: 2 },
+    { outletId: lounge.id, code: "BEV-001", name: "Castle Lager 500ml", category: "Bar", mealPeriod: "BAR", price: 4, cost: 1.2 },
+    { outletId: lounge.id, code: "BEV-002", name: "Zambezi Lager 500ml", category: "Bar", mealPeriod: "BAR", price: 4, cost: 1.2 },
+    { outletId: lounge.id, code: "BEV-003", name: "Heineken 330ml", category: "Bar", mealPeriod: "BAR", price: 5, cost: 1.8 },
+    { outletId: lounge.id, code: "BEV-004", name: "House wine glass", category: "Bar", mealPeriod: "BAR", price: 6, cost: 2 },
+    { outletId: lounge.id, code: "BEV-005", name: "Amarula", category: "Bar", mealPeriod: "BAR", price: 6, cost: 2 },
+    { outletId: lounge.id, code: "BEV-006", name: "Gin & tonic", category: "Bar", mealPeriod: "BAR", price: 7, cost: 2.2 },
+    { outletId: lounge.id, code: "BEV-007", name: "Whisky tot", category: "Bar", mealPeriod: "BAR", price: 8, cost: 2.5 },
+    { outletId: lounge.id, code: "BEV-008", name: "Soft drink", category: "Bar", mealPeriod: "BAR", price: 2, cost: 0.6 },
+    { outletId: lounge.id, code: "BEV-009", name: "Cappuccino", category: "Bar", mealPeriod: "BAR", price: 3.5, cost: 0.8 },
+    { outletId: lounge.id, code: "SNK-001", name: "Chicken wings", category: "Snacks", mealPeriod: "BAR", price: 8, cost: 2.5 },
+    { outletId: lounge.id, code: "SNK-002", name: "Loaded fries", category: "Snacks", mealPeriod: "BAR", price: 6, cost: 1.8 },
+    { outletId: lounge.id, code: "SNK-003", name: "Mixed nuts bowl", category: "Snacks", mealPeriod: "BAR", price: 5, cost: 1.5 },
   ];
   await prisma.menuItem.createMany({ data: menuItems });
+
+  await prisma.serviceCatalogItem.createMany({
+    data: [
+      { code: "SVC-LAU-01", name: "Laundry wash & fold", category: "LAUNDRY", price: 8 },
+      { code: "SVC-LAU-02", name: "Dry cleaning (suit)", category: "LAUNDRY", price: 15 },
+      { code: "SVC-TRS-01", name: "Airport pickup", category: "TRANSIT", price: 25 },
+      { code: "SVC-TRS-02", name: "Hotel shuttle drop", category: "TRANSIT", price: 12 },
+      { code: "SVC-CON-01", name: "Concierge arrangements", category: "CONCIERGE", price: 10 },
+      { code: "SVC-MEAL-01", name: "Packed lunch", category: "MEAL", mealPeriod: "LUNCH", price: 11 },
+      { code: "SVC-MEAL-02", name: "Conference tea break", category: "MEAL", mealPeriod: "CONFERENCE", price: 6 },
+      { code: "SVC-MEAL-03", name: "In-room dining tray", category: "MEAL", mealPeriod: "DINNER", price: 18 },
+      { code: "SVC-OTH-01", name: "Extra bed", category: "OTHERS", price: 20 },
+      { code: "SVC-OTH-02", name: "Late checkout", category: "OTHERS", price: 30 },
+    ],
+  });
 
   // Conference
   const ballroom = await prisma.conferenceVenue.create({
@@ -681,6 +752,12 @@ async function main() {
         bodyPattern: "Dear {GuestName}, your stay at Manica Skyview Hotel is confirmed. Booking {BookingNumber}.",
       },
       {
+        name: "ONLINE_BOOKING_RECEPTION",
+        channel: "EMAIL",
+        subjectPattern: "Online booking {BookingNumber}",
+        bodyPattern: "A guest booked online. Booking {BookingNumber}. Guest {GuestName}. Arrive {Arrive} Depart {Depart}.",
+      },
+      {
         name: "EVENT_REMINDER_SMS",
         channel: "SMS",
         bodyPattern: "Reminder: {EventName} at {Venue} on {Date}.",
@@ -701,6 +778,7 @@ async function main() {
   console.log("  fosupervisor / Supervisor@MSH2026!");
   console.log("  housekeeping / Housekeeping@MSH2026!");
   console.log("  sales / Sales@MSH2026!");
+  console.log("  guest / Guest@MSH2026!");
 }
 
 main()

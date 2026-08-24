@@ -123,12 +123,16 @@ groupReservationsRouter.post(
     const body = validateBody(
       z.object({
         fullName: z.string().min(1),
-        nationality: z.string().optional(),
+        nationality: z.string().min(2, "Nationality is required"),
         nationalId: z.string().optional(),
         passportNumber: z.string().optional(),
         roomTypeCode: z.string().optional(),
         vipStatus: z.enum(["NONE", "VIP1", "VIP2", "VIP3"]).optional(),
         notes: z.string().optional(),
+      }).superRefine((data, ctx) => {
+        if (!data.nationalId?.trim() && !data.passportNumber?.trim()) {
+          ctx.addIssue({ code: "custom", message: "National ID or passport is required", path: ["nationalId"] });
+        }
       }),
       req,
     );
@@ -172,7 +176,7 @@ groupReservationsRouter.post(
         rows: z.array(
           z.object({
             fullName: z.string(),
-            nationality: z.string().optional(),
+            nationality: z.string().min(2, "Nationality is required"),
             nationalId: z.string().optional(),
             passportNumber: z.string().optional(),
             roomTypeCode: z.string().optional(),

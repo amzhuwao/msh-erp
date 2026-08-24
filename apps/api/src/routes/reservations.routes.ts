@@ -9,9 +9,10 @@ import {
   cancelReservation,
   checkInReservation,
   createReservation,
+  recheckInReservation,
   searchAvailability,
 } from "../services/reservation.service.js";
-import { checkOutReservation } from "../services/folio.service.js";
+import { buildFolioDocument, checkOutReservation } from "../services/folio.service.js";
 
 export const reservationsRouter = Router();
 
@@ -32,10 +33,12 @@ const createReservationSchema = z.object({
   adults: z.number().int().min(1).default(1),
   children: z.number().int().min(0).default(0),
   specialRequests: z.string().optional(),
+  source: z.enum(["WALK_IN", "PHONE", "ONLINE", "OTA", "AGENT", "GROUP"]).optional(),
 });
 
 const checkInSchema = z.object({
   roomId: z.string().min(1),
+  nationality: z.string().optional(),
   nationalId: z.string().optional(),
   passportNumber: z.string().optional(),
 });
@@ -88,6 +91,7 @@ reservationsRouter.get(
           guest: true,
           room: { include: { roomType: true } },
           ratePlan: { include: { roomType: true } },
+          guestServiceOrders: true,
         },
         orderBy: { checkInDate: "asc" },
         skip: (query.page - 1) * query.limit,
@@ -112,6 +116,8 @@ reservationsRouter.get(
         ratePlan: { include: { roomType: true } },
         statusHistory: { orderBy: { createdAt: "desc" }, include: { changedBy: true } },
         folios: { include: { lines: true } },
+        guestServiceOrders: { include: { catalogItem: true } },
+        posOrders: { include: { items: { include: { menuItem: true } }, outlet: true } },
       },
     });
 
@@ -162,6 +168,36 @@ reservationsRouter.post(
       ipAddress: getClientIp(req),
     });
     res.json(reservation);
+  }),
+);
+
+reservationsRouter.post(
+  "/:id/recheckin",
+  authorize("Reservations", "EDIT"),
+  asyncHandler(async (req, res) => {
+    const body = validateBody(z.object({ roomId: z.string().optional() }), req);
+    const reservation = await recheckInReservation({
+      reservationId: paramId(req.params.id),
+      roomId: body.roomId,
+      userId: req.user!.id,
+      ipAddress: getClientIp(req),
+    });
+    res.json(reservation);
+  }),
+);
+
+reservationsRouter.get(
+  "/:id/quote",
+  authorize("Reservations", "VIEW"),
+  asyncHandler(async (req, res) => {
+    const reservation = await prisma.reservation.findUnique({
+      where: { id: paramId(req.params.id) },
+      include: { folios: true },
+    });
+    if (!reservation?.folios[0]) {
+      throw new AppError(404, "RES-006", "Reservation not found");
+    }
+    res.json(await buildFolioDocument(reservation.folios[0].id, "quote"));
   }),
 );
 

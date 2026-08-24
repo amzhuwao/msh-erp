@@ -7,12 +7,17 @@ import {
   assignRunner,
   createServiceOrder,
   listActiveRequests,
+  listCatalog,
   scheduleTransit,
   updateServiceStatus,
 } from "../services/guest-services.service.js";
 
 export const guestServicesRouter = Router();
 guestServicesRouter.use(authenticate);
+
+guestServicesRouter.get("/catalog", authorize("GuestServices", "VIEW"), asyncHandler(async (_req, res) => {
+  res.json({ items: await listCatalog() });
+}));
 
 guestServicesRouter.get("/active-requests", authorize("GuestServices", "VIEW"), asyncHandler(async (_req, res) => {
   res.json({ items: await listActiveRequests() });
@@ -22,6 +27,7 @@ guestServicesRouter.post("/orders", authorize("GuestServices", "CREATE"), asyncH
   const body = validateBody(z.object({
     reservationId: z.string(),
     serviceType: z.enum(["LAUNDRY", "ROOM_SERVICE", "TRANSIT", "CONCIERGE", "OTHERS"]),
+    catalogItemId: z.string().optional(),
     totalCharge: z.number().optional(),
     specialInstructions: z.string().optional(),
     laundryItems: z.array(z.object({

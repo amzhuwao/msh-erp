@@ -6,6 +6,7 @@ import {
   getArrivalsToday,
   getDeparturesToday,
   getInHouseGuests,
+  getRecentCheckouts,
   getTapeChart,
 } from "../services/front-office.service.js";
 
@@ -52,5 +53,13 @@ frontOfficeRouter.get(
   asyncHandler(async (req, res) => {
     const query = validateQuery(z.object({ search: z.string().optional() }), req);
     res.json({ items: await getInHouseGuests(query.search) });
+  }),
+);
+
+frontOfficeRouter.get(
+  "/recent-checkouts",
+  authorize("Reservations", "VIEW"),
+  asyncHandler(async (_req, res) => {
+    res.json({ items: await getRecentCheckouts() });
   }),
 );

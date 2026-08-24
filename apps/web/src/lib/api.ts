@@ -51,6 +51,21 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
   return data as T;
 }
 
+export async function publicApiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...(options.headers as Record<string, string>),
+    },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.message ?? `Request failed (${res.status})`);
+  }
+  return data as T;
+}
+
 export async function login(username: string, password: string) {
   const data = await apiFetch<{ token: string; user: AuthUser }>("/api/auth/login", {
     method: "POST",

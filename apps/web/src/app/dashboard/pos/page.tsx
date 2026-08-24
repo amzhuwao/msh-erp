@@ -40,9 +40,14 @@ export default function PosPage() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [orders, setOrders] = useState<PosOrder[]>([]);
   const [roomNumber, setRoomNumber] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState<"CASH" | "ROOM_CHARGE">("CASH");
+  const [paymentMethod, setPaymentMethod] = useState<"CASH" | "CARD" | "BANK_TRANSFER" | "ECOCASH" | "ONEMONEY" | "ROOM_CHARGE">("CASH");
   const [lastOrderId, setLastOrderId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [payInfo, setPayInfo] = useState<{
+    bankTransfer: { bankName: string | null; accountName: string | null; accountNumber: string | null; branch: string | null; swiftCode: string | null };
+    ecocash: { number: string | null; merchant: string | null };
+    onemoney: { number: string | null };
+  } | null>(null);
 
   function loadMenu() {
     apiFetch<{ outlets: Outlet[] }>("/api/pos/menu").then((data) => {
@@ -56,6 +61,7 @@ export default function PosPage() {
 
   useEffect(() => {
     loadMenu();
+    apiFetch("/api/property/payment-instructions").then(setPayInfo).catch(() => undefined);
   }, []);
 
   const outlet = outlets.find((o) => o.id === selectedOutlet);
@@ -197,9 +203,13 @@ export default function PosPage() {
               <select
                 className="w-full border rounded-lg px-3 py-2 text-sm mb-2"
                 value={paymentMethod}
-                onChange={(e) => setPaymentMethod(e.target.value as "CASH" | "ROOM_CHARGE")}
+                onChange={(e) => setPaymentMethod(e.target.value as typeof paymentMethod)}
               >
                 <option value="CASH">Cash</option>
+                <option value="CARD">Card</option>
+                <option value="BANK_TRANSFER">Bank transfer</option>
+                <option value="ECOCASH">EcoCash</option>
+                <option value="ONEMONEY">NetOne OneMoney</option>
                 <option value="ROOM_CHARGE">Room Charge</option>
               </select>
               {paymentMethod === "ROOM_CHARGE" && (
@@ -209,6 +219,15 @@ export default function PosPage() {
                   value={roomNumber}
                   onChange={(e) => setRoomNumber(e.target.value)}
                 />
+              )}
+              {payInfo && (paymentMethod === "BANK_TRANSFER" || paymentMethod === "ECOCASH" || paymentMethod === "ONEMONEY") && (
+                <div className="text-xs bg-amber-50 border border-amber-100 rounded p-2 mb-2">
+                  {paymentMethod === "BANK_TRANSFER" && (
+                    <p>{payInfo.bankTransfer.bankName} {payInfo.bankTransfer.branch} · {payInfo.bankTransfer.accountName} · {payInfo.bankTransfer.accountNumber} · SWIFT {payInfo.bankTransfer.swiftCode}</p>
+                  )}
+                  {paymentMethod === "ECOCASH" && <p>EcoCash {payInfo.ecocash.number} · Merchant {payInfo.ecocash.merchant}</p>}
+                  {paymentMethod === "ONEMONEY" && <p>NetOne / OneMoney {payInfo.onemoney.number}</p>}
+                </div>
               )}
               <button
                 onClick={payOrder}

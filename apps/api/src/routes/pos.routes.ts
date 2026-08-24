@@ -74,7 +74,7 @@ posRouter.post(
   asyncHandler(async (req, res) => {
     const body = validateBody(
       z.object({
-        paymentMethod: z.enum(["CASH", "CARD", "MOBILE", "ROOM_CHARGE"]),
+        paymentMethod: z.enum(["CASH", "CARD", "MOBILE", "ROOM_CHARGE", "BANK_TRANSFER", "ECOCASH", "ONEMONEY"]),
         roomNumber: z.string().optional(),
       }),
       req,

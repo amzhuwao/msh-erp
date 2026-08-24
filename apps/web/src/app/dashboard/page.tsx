@@ -7,6 +7,8 @@ import { ArrivalsTab } from "@/components/ArrivalsTab";
 import { DeparturesTab } from "@/components/DeparturesTab";
 import { InHouseTab } from "@/components/InHouseTab";
 import { AvailabilitySearch } from "@/components/AvailabilitySearch";
+import { GuestRegisterTab } from "@/components/GuestRegisterTab";
+import { RecheckInTab } from "@/components/RecheckInTab";
 import { PageHeader } from "@/components/ui/PageHeader";
 
 interface DashboardStats {
@@ -17,7 +19,7 @@ interface DashboardStats {
   roomStatusBreakdown: { status: string; _count: { status: number } }[];
 }
 
-const tabs = ["Tape Chart", "Arrivals", "Departures", "In-House", "Availability"] as const;
+const tabs = ["Tape Chart", "Arrivals", "Departures", "In-House", "Recheck-in", "Register", "Availability"] as const;
 
 export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState<(typeof tabs)[number]>("Tape Chart");
@@ -65,6 +67,8 @@ export default function DashboardPage() {
         {activeTab === "Arrivals" && <ArrivalsTab />}
         {activeTab === "Departures" && <DeparturesTab />}
         {activeTab === "In-House" && <InHouseTab />}
+        {activeTab === "Recheck-in" && <RecheckInTab />}
+        {activeTab === "Register" && <GuestRegisterTab />}
         {activeTab === "Availability" && <AvailabilitySearch />}
       </div>
     </div>

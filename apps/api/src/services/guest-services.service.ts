@@ -4,6 +4,10 @@ import { AppError } from "../lib/errors.js";
 import { nextDocumentNumber, writeAuditLog } from "./system.service.js";
 import { postFolioCharge } from "./folio.service.js";
 
+export async function listCatalog() {
+  return prisma.serviceCatalogItem.findMany({ where: { isActive: true }, orderBy: [{ category: "asc" }, { name: "asc" }] });
+}
+
 export async function listActiveRequests() {
   return prisma.guestServiceOrder.findMany({
     where: { status: { notIn: ["COMPLETED", "CANCELLED"] } },
@@ -20,6 +24,7 @@ export async function listActiveRequests() {
 export async function createServiceOrder(input: {
   reservationId: string;
   serviceType: "LAUNDRY" | "ROOM_SERVICE" | "TRANSIT" | "CONCIERGE" | "OTHERS";
+  catalogItemId?: string;
   totalCharge?: number;
   specialInstructions?: string;
   laundryItems?: { itemName: string; quantity: number; unitPrice: number; serviceOption?: "WASH_AND_FOLD" | "IRON" | "DRY_CLEAN" }[];
@@ -34,14 +39,22 @@ export async function createServiceOrder(input: {
     throw new AppError(400, "GSV-002", "Guest must be checked in to log services");
   }
 
+  let catalogCharge = 0;
+  if (input.catalogItemId) {
+    const item = await prisma.serviceCatalogItem.findUnique({ where: { id: input.catalogItemId } });
+    if (!item?.isActive) throw new AppError(404, "GSV-005", "Service catalog item not found");
+    catalogCharge = Number(item.price);
+  }
+
   const laundryTotal = (input.laundryItems ?? []).reduce((s, i) => s + i.quantity * i.unitPrice, 0);
-  const totalCharge = input.totalCharge ?? laundryTotal;
+  const totalCharge = input.totalCharge ?? (catalogCharge || laundryTotal);
   const serviceNumber = await nextDocumentNumber("GUEST_SERVICES");
 
   const order = await prisma.guestServiceOrder.create({
     data: {
       serviceNumber,
       reservationId: input.reservationId,
+      catalogItemId: input.catalogItemId,
       serviceType: input.serviceType,
       totalCharge,
       specialInstructions: input.specialInstructions,
@@ -97,6 +110,7 @@ export async function updateServiceStatus(id: string, status: GuestServiceStatus
       folioId: folio.id,
       description: `${order.serviceType} ${order.serviceNumber}`,
       amount: Number(order.totalCharge),
+      department: "SERVICES",
       userId,
     });
     await writeAuditLog({

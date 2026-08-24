@@ -2,6 +2,7 @@ import { GroupReservationStatus, GroupRoomAllocationStatus, ReservationStatus, R
 import { prisma } from "../lib/prisma.js";
 import { AppError } from "../lib/errors.js";
 import { nextDocumentNumber, writeAuditLog } from "./system.service.js";
+import { assertGuestIdentity } from "../lib/identity.js";
 import { checkRoomOverlap } from "./reservation.service.js";
 
 function splitFullName(fullName: string): { firstName: string; lastName: string } {
@@ -327,6 +328,8 @@ export async function addGroupGuest(input: {
     throw new AppError(404, "GRP-001", "Group reservation not found");
   }
 
+  assertGuestIdentity(input);
+
   return prisma.groupGuest.create({
     data: {
       groupReservationId: input.groupId,
@@ -371,6 +374,14 @@ export async function importRoomingList(input: {
   input.rows.forEach((row, index) => {
     if (!row.fullName?.trim()) {
       errors.push({ row: index + 1, message: "Full name is required" });
+      return;
+    }
+    if (!row.nationality?.trim()) {
+      errors.push({ row: index + 1, message: "Nationality is required" });
+      return;
+    }
+    if (!row.nationalId?.trim() && !row.passportNumber?.trim()) {
+      errors.push({ row: index + 1, message: "National ID or passport is required" });
       return;
     }
     const duplicate = group.guests.some(

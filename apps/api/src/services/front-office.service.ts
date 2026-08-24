@@ -120,7 +120,25 @@ export async function getInHouseGuests(search?: string) {
       guest: true,
       room: { include: { roomType: true } },
       ratePlan: true,
+      folios: { select: { id: true } },
     },
     orderBy: { room: { number: "asc" } },
+  });
+}
+
+export async function getRecentCheckouts() {
+  const from = addDays(startOfDay(new Date()), -14);
+  return prisma.reservation.findMany({
+    where: {
+      status: ReservationStatus.CHECKED_OUT,
+      updatedAt: { gte: from },
+    },
+    include: {
+      guest: true,
+      room: { include: { roomType: true } },
+      folios: { select: { id: true } },
+    },
+    orderBy: { updatedAt: "desc" },
+    take: 50,
   });
 }

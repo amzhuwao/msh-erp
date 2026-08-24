@@ -9,14 +9,21 @@ interface Order {
   reservation: { guest: { firstName: string; lastName: string }; room: { number: string } | null };
 }
 interface Stay { id: string; guest: { firstName: string; lastName: string }; room: { number: string } | null }
+interface CatalogItem { id: string; name: string; category: string; price: string; mealPeriod: string | null }
+
+const typeMap: Record<string, string> = {
+  LAUNDRY: "LAUNDRY", TRANSIT: "TRANSIT", CONCIERGE: "CONCIERGE", MEAL: "ROOM_SERVICE", OTHERS: "OTHERS",
+};
 
 export default function GuestServicesPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [stays, setStays] = useState<Stay[]>([]);
-  const [form, setForm] = useState({ reservationId: "", serviceType: "LAUNDRY", totalCharge: 15, specialInstructions: "" });
+  const [catalog, setCatalog] = useState<CatalogItem[]>([]);
+  const [form, setForm] = useState({ reservationId: "", serviceType: "LAUNDRY", catalogItemId: "", totalCharge: 15, specialInstructions: "" });
 
   function load() {
     apiFetch<{ items: Order[] }>("/api/services/active-requests").then((d) => setOrders(d.items));
+    apiFetch<{ items: CatalogItem[] }>("/api/services/catalog").then((d) => setCatalog(d.items)).catch(() => setCatalog([]));
     apiFetch<{ items: Stay[] }>("/api/front-office/in-house").then((d) => setStays(d.items)).catch(() => {
       apiFetch<{ items: Stay[] }>("/api/reservations?status=CHECKED_IN").then((d) => setStays(d.items)).catch(() => setStays([]));
     });
@@ -24,7 +31,14 @@ export default function GuestServicesPage() {
   useEffect(() => { load(); }, []);
 
   async function create() {
-    await apiFetch("/api/services/orders", { method: "POST", body: JSON.stringify({ ...form, totalCharge: Number(form.totalCharge) }) });
+    await apiFetch("/api/services/orders", {
+      method: "POST",
+      body: JSON.stringify({
+        ...form,
+        catalogItemId: form.catalogItemId || undefined,
+        totalCharge: Number(form.totalCharge),
+      }),
+    });
     load();
   }
   async function complete(id: string) {
@@ -36,13 +50,25 @@ export default function GuestServicesPage() {
 
   return (
     <div className="p-6">
-      <PageHeader title="Guest Services" description="Laundry, room service, transit, and concierge — charges post to folio on completion" />
+      <PageHeader title="Guest Services" description="Meals, laundry, transit, concierge — charges post to folio on completion" />
       <section className="msh-card p-4 mb-6">
         <h2 className="font-semibold mb-3">Log service</h2>
-        <div className="grid md:grid-cols-4 gap-2">
+        <div className="grid md:grid-cols-5 gap-2">
           <select className="msh-input" value={form.reservationId} onChange={(e) => setForm({ ...form, reservationId: e.target.value })}>
             <option value="">In-house guest…</option>
             {stays.map((s) => <option key={s.id} value={s.id}>{s.guest.firstName} {s.guest.lastName} {s.room ? `· ${s.room.number}` : ""}</option>)}
+          </select>
+          <select className="msh-input" value={form.catalogItemId} onChange={(e) => {
+            const item = catalog.find((c) => c.id === e.target.value);
+            setForm({
+              ...form,
+              catalogItemId: e.target.value,
+              totalCharge: item ? Number(item.price) : form.totalCharge,
+              serviceType: item ? (typeMap[item.category] ?? "OTHERS") : form.serviceType,
+            });
+          }}>
+            <option value="">Catalog item…</option>
+            {catalog.map((c) => <option key={c.id} value={c.id}>{c.name} · ${Number(c.price).toFixed(2)}{c.mealPeriod ? ` · ${c.mealPeriod}` : ""}</option>)}
           </select>
           <select className="msh-input" value={form.serviceType} onChange={(e) => setForm({ ...form, serviceType: e.target.value })}>
             {["LAUNDRY", "ROOM_SERVICE", "TRANSIT", "CONCIERGE", "OTHERS"].map((t) => <option key={t}>{t}</option>)}

@@ -1,7 +1,9 @@
-import { ReservationStatus, RoomStatus } from "@prisma/client";
+import { BookingSource, ReservationStatus, RoomStatus } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { AppError } from "../lib/errors.js";
 import { nextDocumentNumber, writeAuditLog } from "./system.service.js";
+import { assertGuestIdentity } from "../lib/identity.js";
+import { utcToday } from "../lib/tax.js";
 
 function toDateOnly(value: string | Date): Date {
   const date = value instanceof Date ? value : new Date(value);
@@ -86,6 +88,7 @@ export async function createReservation(input: {
   adults: number;
   children: number;
   specialRequests?: string;
+  source?: BookingSource;
   createdById: string;
   ipAddress?: string;
 }) {
@@ -95,6 +98,12 @@ export async function createReservation(input: {
   if (checkIn >= checkOut) {
     throw new AppError(400, "RES-002", "Check-in date must be before check-out date");
   }
+
+  const guest = await prisma.guest.findUnique({ where: { id: input.guestId } });
+  if (!guest) {
+    throw new AppError(404, "GST-001", "Guest not found");
+  }
+  assertGuestIdentity(guest);
 
   const ratePlan = await prisma.ratePlan.findUnique({
     where: { id: input.ratePlanId },
@@ -117,6 +126,7 @@ export async function createReservation(input: {
   }
 
   const reservationNumber = await nextDocumentNumber("RESERVATIONS");
+  const source = input.source ?? BookingSource.WALK_IN;
 
   const reservation = await prisma.$transaction(async (tx) => {
     const created = await tx.reservation.create({
@@ -131,6 +141,7 @@ export async function createReservation(input: {
         children: input.children,
         specialRequests: input.specialRequests,
         status: ReservationStatus.CONFIRMED,
+        source,
         createdById: input.createdById,
       },
       include: {
@@ -146,7 +157,7 @@ export async function createReservation(input: {
         oldStatus: null,
         newStatus: ReservationStatus.CONFIRMED,
         changedById: input.createdById,
-        changeReason: "Reservation created",
+        changeReason: source === BookingSource.ONLINE ? "Online booking" : "Reservation created",
       },
     });
 
@@ -166,9 +177,14 @@ export async function createReservation(input: {
     action: "RESERVATION_CREATE",
     entityType: "Reservation",
     entityId: reservation.id,
-    details: { reservationNumber },
+    details: { reservationNumber, source },
     ipAddress: input.ipAddress,
   });
+
+  if (source === BookingSource.ONLINE) {
+    const { notifyReceptionOfOnlineBooking } = await import("./notification.service.js");
+    await notifyReceptionOfOnlineBooking(reservation);
+  }
 
   return reservation;
 }
@@ -176,6 +192,7 @@ export async function createReservation(input: {
 export async function checkInReservation(input: {
   reservationId: string;
   roomId: string;
+  nationality?: string;
   nationalId?: string;
   passportNumber?: string;
   userId: string;
@@ -194,6 +211,22 @@ export async function checkInReservation(input: {
     throw new AppError(400, "RES-007", "Reservation is not eligible for check-in");
   }
 
+  const stayDate = toDateOnly(reservation.checkInDate);
+  const today = utcToday();
+  if (today.getTime() < stayDate.getTime()) {
+    throw new AppError(
+      400,
+      "RES-014",
+      `Check-in is only allowed on the reservation date (${stayDate.toISOString().slice(0, 10)})`,
+    );
+  }
+
+  assertGuestIdentity({
+    nationality: reservation.guest.nationality,
+    nationalId: input.nationalId || reservation.guest.nationalId,
+    passportNumber: input.passportNumber || reservation.guest.passportNumber,
+  });
+
   const room = await prisma.room.findUnique({ where: { id: input.roomId } });
   if (!room) {
     throw new AppError(404, "RES-008", "Room not found");
@@ -205,20 +238,14 @@ export async function checkInReservation(input: {
 
   await checkRoomOverlap(input.roomId, reservation.checkInDate, reservation.checkOutDate, reservation.id);
 
-  const hasId = input.nationalId || input.passportNumber ||
-    reservation.guest.nationalId || reservation.guest.passportNumber;
-
-  if (!hasId) {
-    throw new AppError(400, "RES-010", "National ID or passport required before check-in");
-  }
-
   const updated = await prisma.$transaction(async (tx) => {
-    if (input.nationalId || input.passportNumber) {
+  if (input.nationalId || input.passportNumber || input.nationality) {
       await tx.guest.update({
         where: { id: reservation.guestId },
         data: {
           nationalId: input.nationalId ?? reservation.guest.nationalId,
           passportNumber: input.passportNumber ?? reservation.guest.passportNumber,
+          nationality: input.nationality ?? reservation.guest.nationality,
         },
       });
     }
@@ -258,6 +285,105 @@ export async function checkInReservation(input: {
     userId: input.userId,
     module: "Reservations",
     action: "CHECK_IN",
+    entityType: "Reservation",
+    entityId: reservation.id,
+    ipAddress: input.ipAddress,
+  });
+
+  return updated;
+}
+
+export async function recheckInReservation(input: {
+  reservationId: string;
+  roomId?: string;
+  userId: string;
+  ipAddress?: string;
+}) {
+  const reservation = await prisma.reservation.findUnique({
+    where: { id: input.reservationId },
+    include: { guest: true, room: true, folios: true },
+  });
+
+  if (!reservation) {
+    throw new AppError(404, "RES-006", "Reservation not found");
+  }
+  if (reservation.status !== ReservationStatus.CHECKED_OUT) {
+    throw new AppError(400, "RES-015", "Only checked-out reservations can be rechecked in");
+  }
+
+  assertGuestIdentity(reservation.guest);
+
+  const roomId = input.roomId ?? reservation.roomId;
+  if (!roomId) {
+    throw new AppError(400, "RES-016", "A room is required to recheck in");
+  }
+
+  const room = await prisma.room.findUnique({ where: { id: roomId } });
+  if (!room) {
+    throw new AppError(404, "RES-008", "Room not found");
+  }
+
+  const occupiedByOther = await prisma.reservation.findFirst({
+    where: {
+      roomId,
+      id: { not: reservation.id },
+      status: ReservationStatus.CHECKED_IN,
+    },
+  });
+  if (occupiedByOther) {
+    throw new AppError(409, "RES-017", "Room is occupied by another in-house guest");
+  }
+
+  const today = utcToday();
+  const checkOut = reservation.checkOutDate > today
+    ? reservation.checkOutDate
+    : new Date(today.getTime() + 24 * 60 * 60 * 1000);
+
+  const updated = await prisma.$transaction(async (tx) => {
+    const result = await tx.reservation.update({
+      where: { id: reservation.id },
+      data: {
+        roomId,
+        status: ReservationStatus.CHECKED_IN,
+        checkOutDate: checkOut,
+      },
+      include: {
+        guest: true,
+        room: { include: { roomType: true } },
+        ratePlan: true,
+        folios: true,
+      },
+    });
+
+    await tx.room.update({
+      where: { id: roomId },
+      data: { status: RoomStatus.OCCUPIED },
+    });
+
+    for (const folio of reservation.folios) {
+      await tx.folio.update({
+        where: { id: folio.id },
+        data: { status: "OPEN" },
+      });
+    }
+
+    await tx.reservationStatusHistory.create({
+      data: {
+        reservationId: reservation.id,
+        oldStatus: reservation.status,
+        newStatus: ReservationStatus.CHECKED_IN,
+        changedById: input.userId,
+        changeReason: "Guest rechecked in after checkout",
+      },
+    });
+
+    return result;
+  });
+
+  await writeAuditLog({
+    userId: input.userId,
+    module: "Reservations",
+    action: "RECHECK_IN",
     entityType: "Reservation",
     entityId: reservation.id,
     ipAddress: input.ipAddress,
