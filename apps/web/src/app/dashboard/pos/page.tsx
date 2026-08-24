@@ -61,7 +61,7 @@ export default function PosPage() {
 
   useEffect(() => {
     loadMenu();
-    apiFetch("/api/property/payment-instructions").then(setPayInfo).catch(() => undefined);
+    apiFetch<typeof payInfo>("/api/property/payment-instructions").then(setPayInfo).catch(() => undefined);
   }, []);
 
   const outlet = outlets.find((o) => o.id === selectedOutlet);
