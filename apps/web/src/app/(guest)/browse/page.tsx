@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { IconBed, IconCar, IconCoffee, IconPeople, IconSearch, IconWifi } from "@/components/portal/Icons";
 import { publicApiFetch } from "@/lib/api";
-import { addDaysISO, formatMoney, nightsBetween, roomImage, todayISO } from "@/lib/portal";
+import { ROOM_COLLECTION, addDaysISO, formatMoney, nightsBetween, portalAsset, roomImage, todayISO } from "@/lib/portal";
 
 interface CatalogRoom {
   roomTypeId: string;
@@ -40,11 +40,19 @@ export default function BrowsePage() {
   const [available, setAvailable] = useState<AvailableRoom[] | null>(null);
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState("");
+  const [catalogLoaded, setCatalogLoaded] = useState(false);
 
   useEffect(() => {
     publicApiFetch<{ rooms: CatalogRoom[] }>("/api/public/rooms")
       .then((d) => setCatalog(d.rooms))
-      .catch(() => undefined);
+      .catch(() => setCatalog([]))
+      .finally(() => setCatalogLoaded(true));
+  }, []);
+
+  useEffect(() => {
+    void search();
+    // Initial availability search against current dates.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const nights = useMemo(() => nightsBetween(checkIn, checkOut), [checkIn, checkOut]);
@@ -121,7 +129,7 @@ export default function BrowsePage() {
               <label className="block text-sm font-medium mb-1.5">Room Type</label>
               <select className="msh-input" value={roomType} onChange={(e) => setRoomType(e.target.value)}>
                 <option value="all">All Types</option>
-                {catalog.map((r) => (
+                {(catalog.length ? catalog : available ?? []).map((r) => (
                   <option key={r.roomTypeId} value={r.roomTypeId}>{r.name}</option>
                 ))}
               </select>
@@ -137,13 +145,13 @@ export default function BrowsePage() {
       {error && <p className="text-center text-sm text-destructive mb-4">{error}</p>}
 
       <div className="max-w-5xl mx-auto">
-        {available && shown.length === 0 ? (
+        {available && shown.length === 0 && !error ? (
           <div className="text-center py-12 text-muted-foreground">
             <IconBed className="h-12 w-12 mx-auto mb-3 opacity-40" />
             <p className="text-lg font-medium">No rooms available for your dates</p>
             <p className="text-sm">Try different dates or filters.</p>
           </div>
-        ) : (
+        ) : shown.length > 0 ? (
           <>
             {available && (
               <p className="text-sm text-muted-foreground mb-4">
@@ -190,9 +198,25 @@ export default function BrowsePage() {
               })}
             </div>
           </>
-        )}
-        {!available && shown.length === 0 && (
+        ) : searching || !catalogLoaded ? (
           <p className="text-center text-muted-foreground py-12">Loading rooms…</p>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {ROOM_COLLECTION.map((room) => (
+              <div key={room.name} className="rounded-lg border bg-card overflow-hidden">
+                <div className="h-44 overflow-hidden">
+                  <img src={portalAsset(room.img)} alt={room.name} className="w-full h-full object-cover" />
+                </div>
+                <div className="p-5">
+                  <h3 className="text-lg font-display font-semibold mb-1">{room.name}</h3>
+                  <p className="text-sm text-muted-foreground mb-4">Search dates above to check live availability and book.</p>
+                  <button type="button" className="msh-btn msh-btn-primary w-full" onClick={() => void search()}>
+                    Search availability
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
         )}
       </div>
     </div>
