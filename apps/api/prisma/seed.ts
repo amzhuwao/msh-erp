@@ -349,6 +349,17 @@ async function main() {
     },
   });
 
+  await prisma.user.create({
+    data: {
+      username: "guest",
+      email: "guest@manicaskyview.co.zw",
+      passwordHash: await bcrypt.hash("Guest@MSH2026!", 12),
+      fullName: "Guest Demo User",
+      departmentId: frontOffice.id,
+      roleId: receptionistRole.id,
+    },
+  });
+
   const minOfHealth = await prisma.corporateProfile.create({
     data: {
       companyName: "Ministry of Health — Manicaland",
