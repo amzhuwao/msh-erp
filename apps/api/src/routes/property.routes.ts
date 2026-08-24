@@ -54,3 +54,12 @@ propertyRouter.get(
     });
   }),
 );
+
+propertyRouter.get(
+  "/departments",
+  authorize("Reservations", "VIEW"),
+  asyncHandler(async (_req, res) => {
+    const items = await prisma.department.findMany({ orderBy: { name: "asc" } });
+    res.json({ items });
+  }),
+);

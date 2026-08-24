@@ -46,6 +46,11 @@ enum DocumentModule {
   PAYROLL
   POS_ORDERS
   GL_ENTRIES
+  CONFERENCE
+  REQUISITIONS
+  MAINTENANCE
+  WORK_ORDERS
+  GUEST_SERVICES
 }
 
 model DocumentNumberingPattern {
@@ -76,11 +81,12 @@ model TaxRateDefinition {
 // ─── Module 17: User, Role & Access Management ──────────────────────────────
 
 model Department {
-  id        String   @id @default(cuid())
-  name      String   @unique
-  users     User[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id           String                 @id @default(cuid())
+  name         String                 @unique
+  users        User[]
+  requisitions PurchaseRequisition[]
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
 
   @@map("departments")
 }
@@ -116,6 +122,19 @@ model User {
   groupReservationsCreated GroupReservation[] @relation("GroupReservationCreatedBy")
   statusChanges         ReservationStatusHistory[]
   auditLogs             AuditLog[]
+  conferenceBookings    ConferenceBooking[]     @relation("ConferenceCreatedBy")
+  stockTransactions     StockTransaction[]
+  requisitionsRequested PurchaseRequisition[]   @relation("RequisitionRequester")
+  requisitionsApproved  PurchaseRequisition[]   @relation("RequisitionApprover")
+  purchaseOrdersCreated PurchaseOrder[]         @relation("POCreatedBy")
+  purchaseOrdersApproved PurchaseOrder[]        @relation("POApprovedBy")
+  grnsReceived          GoodsReceivedNote[]
+  maintenanceTickets    MaintenanceTicket[]
+  workOrders            WorkOrder[]
+  salesLeads            SalesLead[]
+  creditTransactions    CorporateCreditTransaction[]
+  guestServiceOrders    GuestServiceOrder[]     @relation("ServiceCreatedBy")
+  serviceAssignments    GuestServiceOrder[]     @relation("ServiceRunner")
   createdAt             DateTime             @default(now())
   updatedAt             DateTime             @updatedAt
 
@@ -197,9 +216,12 @@ model RoomType {
   maxAdults   Int      @default(2)
   maxChildren Int      @default(1)
   baseRate    Decimal  @db.Decimal(10, 2)
-  rooms       Room[]
-  ratePlans   RatePlan[]
-  groupRooms  GroupRoom[]
+  rooms         Room[]
+  ratePlans     RatePlan[]
+  groupRooms    GroupRoom[]
+  yieldRules    YieldRule[]
+  seasonalRates SeasonalRateAdjustment[]
+  contracts     NegotiatedRateContract[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -235,9 +257,10 @@ model Room {
   roomType     RoomType      @relation(fields: [roomTypeId], references: [id])
   status       RoomStatus    @default(INSPECTED)
   isActive     Boolean       @default(true)
-  reservations Reservation[]
-  groupRooms   GroupRoom[]
-  assignments  HousekeepingAssignment[]
+  reservations       Reservation[]
+  groupRooms         GroupRoom[]
+  assignments        HousekeepingAssignment[]
+  maintenanceTickets MaintenanceTicket[]
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
 
@@ -293,8 +316,11 @@ model Guest {
   passportNumber String?
   vipStatus      VipStatus     @default(NONE)
   notes          String?
-  reservations   Reservation[]
-  folios         Folio[]
+  reservations     Reservation[]
+  folios           Folio[]
+  loyaltyAccounts  LoyaltyAccount[]
+  feedback         GuestFeedback[]
+  communicationConsent CommunicationConsentLog[]
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
@@ -322,8 +348,9 @@ model Reservation {
   createdById       String
   createdBy         User                       @relation("ReservationCreatedBy", fields: [createdById], references: [id])
   statusHistory     ReservationStatusHistory[]
-  folios            Folio[]
-  posOrders         PosOrder[]
+  folios             Folio[]
+  posOrders          PosOrder[]
+  guestServiceOrders GuestServiceOrder[]
   createdAt         DateTime                   @default(now())
   updatedAt         DateTime                   @updatedAt
 
@@ -406,6 +433,9 @@ model CorporateProfile {
   isCreditApproved   Boolean            @default(false)
   isActive           Boolean            @default(true)
   groupReservations  GroupReservation[]
+  contracts          NegotiatedRateContract[]
+  creditTransactions CorporateCreditTransaction[]
+  conferenceBookings ConferenceBooking[]
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
 
@@ -469,9 +499,10 @@ model GroupReservation {
   roomAllocations GroupRoom[]
   charges         GroupCharge[]
   invoices        GroupInvoice[]
-  reservations    Reservation[]
-  createdAt       DateTime               @default(now())
-  updatedAt       DateTime               @updatedAt
+  reservations       Reservation[]
+  conferenceBookings ConferenceBooking[]
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
 
   @@index([companyId])
   @@index([status])
@@ -596,6 +627,7 @@ model MenuItem {
   taxRate    Decimal        @default(0.15) @db.Decimal(5, 4)
   isActive   Boolean        @default(true)
   orderItems PosOrderItem[]
+  recipes    RecipeComponent[]
   createdAt  DateTime       @default(now())
   updatedAt  DateTime       @updatedAt
 
@@ -743,4 +775,882 @@ model AccountingPeriod {
 
   @@unique([year, month])
   @@map("accounting_periods")
+}
+
+// ─── Module 5: Conference & Events ──────────────────────────────────────────
+
+enum VenueSetupStyle {
+  BANQUET
+  BOARDROOM
+  USHAPE
+  CINEMA
+}
+
+enum ConferenceBookingStatus {
+  TENTATIVE
+  CONFIRMED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum ConferenceResourceCategory {
+  AV
+  FURNITURE
+  DECOR
+  IT
+}
+
+model ConferenceVenue {
+  id                   String              @id @default(cuid())
+  name                 String              @unique
+  locationDescription  String?
+  maxCapacityBanquet   Int
+  maxCapacityCinema    Int
+  maxCapacityBoardroom Int
+  halfDayRate          Decimal             @db.Decimal(10, 2)
+  fullDayRate          Decimal             @db.Decimal(10, 2)
+  isActive             Boolean             @default(true)
+  bookings             ConferenceBooking[]
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+
+  @@map("conference_venues")
+}
+
+model ConferencePackage {
+  id         String              @id @default(cuid())
+  name       String
+  ratePerPax Decimal             @db.Decimal(10, 2)
+  details    Json?
+  isActive   Boolean             @default(true)
+  bookings   ConferenceBooking[]
+  createdAt  DateTime            @default(now())
+  updatedAt  DateTime            @updatedAt
+
+  @@map("conference_packages")
+}
+
+model ConferenceBooking {
+  id                  String                   @id @default(cuid())
+  bookingNumber       String                   @unique
+  groupReservationId  String?
+  groupReservation    GroupReservation?        @relation(fields: [groupReservationId], references: [id])
+  companyId           String?
+  company             CorporateProfile?        @relation(fields: [companyId], references: [id])
+  venueId             String
+  venue               ConferenceVenue          @relation(fields: [venueId], references: [id])
+  packageId           String?
+  package             ConferencePackage?       @relation(fields: [packageId], references: [id])
+  contactName         String
+  startTimestamp      DateTime
+  endTimestamp        DateTime
+  setupStyle          VenueSetupStyle          @default(BOARDROOM)
+  estimatedPax        Int
+  actualPax           Int?
+  status              ConferenceBookingStatus  @default(TENTATIVE)
+  depositRequired     Decimal                  @default(0) @db.Decimal(10, 2)
+  depositPaid         Decimal                  @default(0) @db.Decimal(10, 2)
+  baseVenueCost       Decimal                  @db.Decimal(10, 2)
+  totalAmount         Decimal                  @db.Decimal(10, 2)
+  createdById         String
+  createdBy           User                     @relation("ConferenceCreatedBy", fields: [createdById], references: [id])
+  resources           ConferenceResourceAllocation[]
+  createdAt           DateTime                 @default(now())
+  updatedAt           DateTime                 @updatedAt
+
+  @@index([venueId])
+  @@index([status])
+  @@index([startTimestamp, endTimestamp])
+  @@map("conference_bookings")
+}
+
+model ConferenceResource {
+  id                 String                         @id @default(cuid())
+  name               String
+  totalInventoryCount Int
+  dailyRentalRate    Decimal                        @db.Decimal(10, 2)
+  category           ConferenceResourceCategory
+  allocations        ConferenceResourceAllocation[]
+  createdAt          DateTime                       @default(now())
+  updatedAt          DateTime                       @updatedAt
+
+  @@map("conference_resources")
+}
+
+model ConferenceResourceAllocation {
+  id                   String             @id @default(cuid())
+  conferenceBookingId  String
+  conferenceBooking    ConferenceBooking  @relation(fields: [conferenceBookingId], references: [id], onDelete: Cascade)
+  resourceId           String
+  resource             ConferenceResource @relation(fields: [resourceId], references: [id])
+  quantityAllocated    Int
+  chargedRate          Decimal            @db.Decimal(10, 2)
+  subtotal             Decimal            @db.Decimal(10, 2)
+  createdAt            DateTime           @default(now())
+
+  @@index([conferenceBookingId])
+  @@map("conference_resource_allocations")
+}
+
+// ─── Module 6: Inventory & Stores ───────────────────────────────────────────
+
+enum InventoryCostMethod {
+  FIFO
+  LIFO
+  WEIGHTED_AVERAGE
+}
+
+enum StockTransactionType {
+  RECEIPT
+  ISSUE
+  TRANSFER_IN
+  TRANSFER_OUT
+  ADJUSTMENT
+}
+
+model StoreLocation {
+  id              String             @id @default(cuid())
+  locationName    String             @unique
+  managerUserId   String?
+  isActive        Boolean            @default(true)
+  balances        StockBalance[]
+  transactions    StockTransaction[]
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  @@map("store_locations")
+}
+
+model InventoryItem {
+  id                 String              @id @default(cuid())
+  itemCode           String              @unique
+  name               String
+  description        String?
+  category           String
+  baseUnitOfMeasure  String
+  costMethod         InventoryCostMethod @default(WEIGHTED_AVERAGE)
+  currentAverageCost Decimal             @default(0) @db.Decimal(12, 4)
+  reorderLevel       Decimal             @default(0) @db.Decimal(12, 2)
+  reorderQuantity    Decimal             @default(0) @db.Decimal(12, 2)
+  isPerishable       Boolean             @default(false)
+  isActive           Boolean             @default(true)
+  balances           StockBalance[]
+  transactions       StockTransaction[]
+  recipeComponents   RecipeComponent[]
+  requisitionItems   RequisitionItem[]
+  workOrderParts     WorkOrderPart[]
+  purchaseOrderItems PurchaseOrderItem[]
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  @@index([category])
+  @@map("inventory_items")
+}
+
+model StockBalance {
+  id               String        @id @default(cuid())
+  itemId           String
+  item             InventoryItem @relation(fields: [itemId], references: [id])
+  storeLocationId  String
+  storeLocation    StoreLocation @relation(fields: [storeLocationId], references: [id])
+  quantityOnHand   Decimal       @default(0) @db.Decimal(12, 2)
+  reservedQuantity Decimal       @default(0) @db.Decimal(12, 2)
+  updatedAt        DateTime      @updatedAt
+
+  @@unique([itemId, storeLocationId])
+  @@map("stock_balances")
+}
+
+model StockTransaction {
+  id              String               @id @default(cuid())
+  itemId          String
+  item            InventoryItem        @relation(fields: [itemId], references: [id])
+  storeLocationId String
+  storeLocation   StoreLocation        @relation(fields: [storeLocationId], references: [id])
+  transactionType StockTransactionType
+  quantity        Decimal              @db.Decimal(12, 2)
+  unitCost        Decimal              @db.Decimal(12, 4)
+  totalCost       Decimal              @db.Decimal(12, 2)
+  referenceDocument String
+  createdById     String
+  createdBy       User                 @relation(fields: [createdById], references: [id])
+  createdAt       DateTime             @default(now())
+
+  @@index([itemId])
+  @@index([storeLocationId])
+  @@map("stock_transactions")
+}
+
+model RecipeComponent {
+  id         String        @id @default(cuid())
+  menuItemId String
+  menuItem   MenuItem      @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  itemId     String
+  item       InventoryItem @relation(fields: [itemId], references: [id])
+  quantity   Decimal       @db.Decimal(12, 4)
+  unit       String
+
+  @@unique([menuItemId, itemId])
+  @@map("recipe_components")
+}
+
+// ─── Module 7: Procurement & Purchasing ─────────────────────────────────────
+
+enum RequisitionStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+}
+
+enum PurchaseOrderStatus {
+  DRAFT
+  PENDING_APPROVAL
+  SENT_TO_SUPPLIER
+  PARTIALLY_RECEIVED
+  COMPLETED
+  CANCELLED
+}
+
+enum SupplierInvoiceStatus {
+  UNPAID
+  PARTIALLY_PAID
+  PAID
+  VARIANCE_HOLD
+  APPROVED_FOR_PAYMENT
+}
+
+model Supplier {
+  id               String              @id @default(cuid())
+  name             String
+  code             String              @unique
+  contactPerson    String
+  email            String
+  phone            String?
+  currency         String              @default("USD")
+  paymentTermsDays Int                 @default(30)
+  vatNumber        String?
+  rating           Decimal             @default(0) @db.Decimal(3, 1)
+  isActive         Boolean             @default(true)
+  purchaseOrders   PurchaseOrder[]
+  grns             GoodsReceivedNote[]
+  invoices         SupplierInvoice[]
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  @@map("suppliers")
+}
+
+model PurchaseRequisition {
+  id                String            @id @default(cuid())
+  requisitionNumber String            @unique
+  departmentId      String
+  department        Department        @relation(fields: [departmentId], references: [id])
+  requesterUserId   String
+  requester         User              @relation("RequisitionRequester", fields: [requesterUserId], references: [id])
+  requiredDate      DateTime          @db.Date
+  approvalStatus    RequisitionStatus @default(DRAFT)
+  approvedById      String?
+  approvedBy        User?             @relation("RequisitionApprover", fields: [approvedById], references: [id])
+  notes             String?
+  items             RequisitionItem[]
+  purchaseOrders    PurchaseOrder[]
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  @@index([departmentId])
+  @@map("purchase_requisitions")
+}
+
+model RequisitionItem {
+  id                 String              @id @default(cuid())
+  requisitionId      String
+  requisition        PurchaseRequisition @relation(fields: [requisitionId], references: [id], onDelete: Cascade)
+  itemId             String?
+  item               InventoryItem?      @relation(fields: [itemId], references: [id])
+  description        String
+  quantityRequested  Decimal             @db.Decimal(12, 2)
+  estimatedUnitPrice Decimal             @db.Decimal(12, 2)
+
+  @@index([requisitionId])
+  @@map("requisition_items")
+}
+
+model PurchaseOrder {
+  id             String              @id @default(cuid())
+  poNumber       String              @unique
+  supplierId     String
+  supplier       Supplier            @relation(fields: [supplierId], references: [id])
+  requisitionId  String?
+  requisition    PurchaseRequisition? @relation(fields: [requisitionId], references: [id])
+  status         PurchaseOrderStatus @default(DRAFT)
+  subtotal       Decimal             @db.Decimal(12, 2)
+  taxAmount      Decimal             @default(0) @db.Decimal(12, 2)
+  totalAmount    Decimal             @db.Decimal(12, 2)
+  approvedById   String?
+  approvedBy     User?               @relation("POApprovedBy", fields: [approvedById], references: [id])
+  createdById    String
+  createdBy      User                @relation("POCreatedBy", fields: [createdById], references: [id])
+  items          PurchaseOrderItem[]
+  grns           GoodsReceivedNote[]
+  invoices       SupplierInvoice[]
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  @@index([supplierId])
+  @@index([status])
+  @@map("purchase_orders")
+}
+
+model PurchaseOrderItem {
+  id          String        @id @default(cuid())
+  purchaseOrderId String
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  itemId      String?
+  item        InventoryItem? @relation(fields: [itemId], references: [id])
+  description String
+  quantity    Decimal       @db.Decimal(12, 2)
+  unitPrice   Decimal       @db.Decimal(12, 2)
+  receivedQty Decimal       @default(0) @db.Decimal(12, 2)
+
+  @@index([purchaseOrderId])
+  @@map("purchase_order_items")
+}
+
+model GoodsReceivedNote {
+  id               String      @id @default(cuid())
+  grnNumber        String      @unique
+  purchaseOrderId  String
+  purchaseOrder    PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
+  supplierId       String
+  supplier         Supplier    @relation(fields: [supplierId], references: [id])
+  receivedDate     DateTime    @db.Date
+  receivedByUserId String
+  receivedBy       User        @relation(fields: [receivedByUserId], references: [id])
+  invoiceReference String?
+  isFullyReceived  Boolean     @default(false)
+  createdAt        DateTime    @default(now())
+
+  @@index([purchaseOrderId])
+  @@map("goods_received_notes")
+}
+
+model SupplierInvoice {
+  id              String                @id @default(cuid())
+  invoiceNumber   String
+  purchaseOrderId String
+  purchaseOrder   PurchaseOrder         @relation(fields: [purchaseOrderId], references: [id])
+  supplierId      String
+  supplier        Supplier              @relation(fields: [supplierId], references: [id])
+  netAmount       Decimal               @db.Decimal(12, 2)
+  taxAmount       Decimal               @default(0) @db.Decimal(12, 2)
+  totalAmount     Decimal               @db.Decimal(12, 2)
+  status          SupplierInvoiceStatus @default(UNPAID)
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  @@index([purchaseOrderId])
+  @@map("supplier_invoices")
+}
+
+// ─── Module 11: Maintenance & Assets ────────────────────────────────────────
+
+enum TicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+  EMERGENCY
+}
+
+enum TicketStatus {
+  OPEN
+  DEFERRED
+  IN_PROGRESS
+  RESOLVED
+  CANCELLED
+}
+
+enum WorkOrderStatus {
+  ASSIGNED
+  IN_PROGRESS
+  COMPLETED
+  ON_HOLD
+}
+
+model AssetMaster {
+  id                  String              @id @default(cuid())
+  assetCode           String              @unique
+  name                String
+  category            String
+  purchaseDate        DateTime            @db.Date
+  purchaseCost        Decimal             @db.Decimal(12, 2)
+  currentValue        Decimal             @db.Decimal(12, 2)
+  depreciationRate    Decimal             @default(0) @db.Decimal(5, 4)
+  locationDescription String?
+  isActive            Boolean             @default(true)
+  tickets             MaintenanceTicket[]
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  @@map("asset_masters")
+}
+
+model MaintenanceTicket {
+  id             String       @id @default(cuid())
+  ticketNumber   String       @unique
+  reporterUserId String
+  reporter       User         @relation(fields: [reporterUserId], references: [id])
+  roomId         String?
+  room           Room?        @relation(fields: [roomId], references: [id])
+  assetId        String?
+  asset          AssetMaster? @relation(fields: [assetId], references: [id])
+  description    String
+  priority       TicketPriority @default(MEDIUM)
+  status         TicketStatus   @default(OPEN)
+  workOrders     WorkOrder[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([status])
+  @@index([priority])
+  @@map("maintenance_tickets")
+}
+
+model WorkOrder {
+  id               String          @id @default(cuid())
+  woNumber         String          @unique
+  ticketId         String
+  ticket           MaintenanceTicket @relation(fields: [ticketId], references: [id])
+  technicianUserId String
+  technician       User            @relation(fields: [technicianUserId], references: [id])
+  scheduledDate    DateTime        @db.Date
+  completionDate   DateTime?
+  status           WorkOrderStatus @default(ASSIGNED)
+  labourHours      Decimal?        @db.Decimal(8, 2)
+  partsCost        Decimal         @default(0) @db.Decimal(12, 2)
+  notes            String?
+  parts            WorkOrderPart[]
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  @@index([ticketId])
+  @@map("work_orders")
+}
+
+model WorkOrderPart {
+  id            String        @id @default(cuid())
+  workOrderId   String
+  workOrder     WorkOrder     @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  itemId        String
+  item          InventoryItem @relation(fields: [itemId], references: [id])
+  quantityUsed  Decimal       @db.Decimal(12, 2)
+  unitPrice     Decimal       @db.Decimal(12, 2)
+
+  @@index([workOrderId])
+  @@map("work_order_parts")
+}
+
+// ─── Module 12: Sales, Marketing & CRM ──────────────────────────────────────
+
+enum LeadSource {
+  WEBSITE
+  WALK_IN
+  COLD_CALL
+  AGENCY
+  EVENT
+}
+
+enum PipelineStage {
+  LEAD
+  QUALIFIED
+  PROPOSAL
+  NEGOTIATION
+  WON
+  LOST
+}
+
+enum SalesActivityType {
+  PHONE_CALL
+  EMAIL
+  MEETING
+  PRESENTATION
+}
+
+enum LoyaltyTier {
+  BRONZE
+  SILVER
+  GOLD
+  PLATINUM
+}
+
+enum FeedbackStatus {
+  PENDING
+  UNDER_REVIEW
+  RESOLVED
+}
+
+model SalesLead {
+  id                  String         @id @default(cuid())
+  companyName         String?
+  contactPerson       String
+  email               String
+  phone               String?
+  source              LeadSource     @default(WEBSITE)
+  estimatedValue      Decimal        @default(0) @db.Decimal(12, 2)
+  pipelineStage       PipelineStage  @default(LEAD)
+  assignedSalesUserId String
+  assignedSalesUser   User           @relation(fields: [assignedSalesUserId], references: [id])
+  activities          SalesActivity[]
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  @@index([pipelineStage])
+  @@index([email])
+  @@map("sales_leads")
+}
+
+model SalesActivity {
+  id               String             @id @default(cuid())
+  leadId           String
+  lead             SalesLead          @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  activityType     SalesActivityType
+  summary          String
+  activityDate     DateTime           @db.Date
+  followUpRequired Boolean            @default(false)
+  followUpDate     DateTime?          @db.Date
+  createdAt        DateTime           @default(now())
+
+  @@index([leadId])
+  @@map("sales_activities")
+}
+
+model LoyaltyAccount {
+  id                  String      @id @default(cuid())
+  guestId             String
+  guest               Guest       @relation(fields: [guestId], references: [id])
+  cardNumber          String      @unique
+  tierLevel           LoyaltyTier @default(BRONZE)
+  totalPointsAccrued  Int         @default(0)
+  totalPointsRedeemed Int         @default(0)
+  isActive            Boolean     @default(true)
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+
+  @@index([guestId])
+  @@map("loyalty_accounts")
+}
+
+model GuestFeedback {
+  id               String         @id @default(cuid())
+  guestId          String
+  guest            Guest          @relation(fields: [guestId], references: [id])
+  reservationId    String?
+  score            Int
+  comments         String?
+  isActionRequired Boolean        @default(false)
+  status           FeedbackStatus @default(PENDING)
+  resolutionNotes  String?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@index([guestId])
+  @@map("guest_feedback")
+}
+
+// ─── Module 13: Corporate contracts & credit ────────────────────────────────
+
+enum CorporateCreditType {
+  DEBIT_CHARGE
+  CREDIT_PAYMENT
+  ADJUSTMENT
+}
+
+model NegotiatedRateContract {
+  id             String           @id @default(cuid())
+  companyId      String
+  company        CorporateProfile @relation(fields: [companyId], references: [id])
+  roomTypeId     String
+  roomType       RoomType         @relation(fields: [roomTypeId], references: [id])
+  contractedRate Decimal          @db.Decimal(10, 2)
+  startDate      DateTime         @db.Date
+  endDate        DateTime         @db.Date
+  isActive       Boolean          @default(true)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  @@index([companyId])
+  @@map("negotiated_rate_contracts")
+}
+
+model CorporateCreditTransaction {
+  id               String              @id @default(cuid())
+  companyId        String
+  company          CorporateProfile    @relation(fields: [companyId], references: [id])
+  transactionType  CorporateCreditType
+  amount           Decimal             @db.Decimal(12, 2)
+  balanceAfter     Decimal             @db.Decimal(12, 2)
+  referenceDetails String?
+  createdById      String
+  createdBy        User                @relation(fields: [createdById], references: [id])
+  createdAt        DateTime            @default(now())
+
+  @@index([companyId])
+  @@map("corporate_credit_transactions")
+}
+
+// ─── Module 14: Revenue Management ──────────────────────────────────────────
+
+enum PromoDiscountType {
+  PERCENT
+  FIXED
+}
+
+model YieldRule {
+  id                         String   @id @default(cuid())
+  roomTypeId                 String
+  roomType                   RoomType @relation(fields: [roomTypeId], references: [id])
+  occupancyThresholdPercent  Decimal  @db.Decimal(5, 4)
+  rateIncreasePercent        Decimal  @db.Decimal(5, 4)
+  isActive                   Boolean  @default(true)
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
+
+  @@index([roomTypeId])
+  @@map("yield_rules")
+}
+
+model SeasonalRateAdjustment {
+  id           String   @id @default(cuid())
+  roomTypeId   String
+  roomType     RoomType @relation(fields: [roomTypeId], references: [id])
+  startDate    DateTime @db.Date
+  endDate      DateTime @db.Date
+  adjustedRate Decimal  @db.Decimal(10, 2)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([roomTypeId])
+  @@map("seasonal_rate_adjustments")
+}
+
+model PromoCode {
+  id            String            @id @default(cuid())
+  code          String            @unique
+  discountType  PromoDiscountType
+  discountValue Decimal           @db.Decimal(10, 2)
+  startDate     DateTime          @db.Date
+  endDate       DateTime          @db.Date
+  minNights     Int               @default(1)
+  usageLimit    Int               @default(100)
+  currentUsage  Int               @default(0)
+  isActive      Boolean           @default(true)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  @@map("promo_codes")
+}
+
+// ─── Module 15: Guest Services ──────────────────────────────────────────────
+
+enum GuestServiceType {
+  LAUNDRY
+  ROOM_SERVICE
+  TRANSIT
+  CONCIERGE
+  OTHERS
+}
+
+enum GuestServiceStatus {
+  RECEIVED
+  DISPATCHED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum LaundryServiceOption {
+  WASH_AND_FOLD
+  IRON
+  DRY_CLEAN
+}
+
+enum TransitType {
+  AIRPORT_PICKUP
+  SHUTTLE_DROP
+  TOURS
+}
+
+model GuestServiceOrder {
+  id                  String             @id @default(cuid())
+  serviceNumber       String             @unique
+  reservationId       String
+  reservation         Reservation        @relation(fields: [reservationId], references: [id])
+  serviceType         GuestServiceType
+  runnerUserId        String?
+  runner              User?              @relation("ServiceRunner", fields: [runnerUserId], references: [id])
+  createdById         String
+  createdBy           User               @relation("ServiceCreatedBy", fields: [createdById], references: [id])
+  status              GuestServiceStatus @default(RECEIVED)
+  totalCharge         Decimal            @default(0) @db.Decimal(10, 2)
+  specialInstructions String?
+  laundryItems        LaundryItemLine[]
+  transitLogs         TransitLog[]
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  @@index([reservationId])
+  @@index([status])
+  @@map("guest_service_orders")
+}
+
+model LaundryItemLine {
+  id            String               @id @default(cuid())
+  orderId       String
+  order         GuestServiceOrder    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  itemName      String
+  quantity      Int
+  unitPrice     Decimal              @db.Decimal(10, 2)
+  serviceOption LaundryServiceOption @default(WASH_AND_FOLD)
+
+  @@index([orderId])
+  @@map("laundry_item_lines")
+}
+
+model TransitLog {
+  id                 String            @id @default(cuid())
+  orderId            String
+  order              GuestServiceOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  passengerName      String
+  transitType        TransitType
+  scheduledTime      DateTime
+  driverUserId       String?
+  vehiclePlateNumber String?
+  createdAt          DateTime          @default(now())
+
+  @@index([orderId])
+  @@map("transit_logs")
+}
+
+// ─── Module 16: Reporting schedules ─────────────────────────────────────────
+
+model ReportSchedule {
+  id          String   @id @default(cuid())
+  reportName  String
+  cronHint    String
+  recipient   String
+  format      String   @default("CSV")
+  isActive    Boolean  @default(true)
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("report_schedules")
+}
+
+// ─── Module 19: Notifications ───────────────────────────────────────────────
+
+enum NotificationChannel {
+  EMAIL
+  SMS
+  IN_APP
+}
+
+enum NotificationStatus {
+  PENDING
+  SENDING
+  SENT
+  FAILED
+  RETRYING
+}
+
+model MessageTemplate {
+  id             String               @id @default(cuid())
+  name           String               @unique
+  channel        NotificationChannel
+  subjectPattern String?
+  bodyPattern    String
+  isActive       Boolean              @default(true)
+  notifications  NotificationQueue[]
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  @@map("message_templates")
+}
+
+model NotificationQueue {
+  id               String             @id @default(cuid())
+  templateId       String?
+  template         MessageTemplate?   @relation(fields: [templateId], references: [id])
+  recipientContact String
+  channel          NotificationChannel
+  subject          String?
+  body             String
+  status           NotificationStatus @default(PENDING)
+  retryCount       Int                @default(0)
+  errorMessage     String?
+  scheduledTime    DateTime           @default(now())
+  sentTime         DateTime?
+  createdAt        DateTime           @default(now())
+
+  @@index([status])
+  @@map("notification_queue")
+}
+
+model CommunicationConsentLog {
+  id          String              @id @default(cuid())
+  guestId     String
+  guest       Guest               @relation(fields: [guestId], references: [id])
+  channel     NotificationChannel
+  isOptIn     Boolean             @default(true)
+  updatedDate DateTime            @default(now())
+
+  @@unique([guestId, channel])
+  @@map("communication_consent_logs")
+}
+
+// ─── Module 20: API & Integration Layer ─────────────────────────────────────
+
+model ApiKeyCredential {
+  id           String    @id @default(cuid())
+  clientName   String
+  tokenHash    String
+  secretKeyHash String
+  tokenPrefix  String
+  scopes       Json
+  isActive     Boolean   @default(true)
+  expiresAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@map("api_key_credentials")
+}
+
+model IntegrationWebhook {
+  id          String   @id @default(cuid())
+  eventName   String
+  targetUrl   String
+  secretToken String
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("integration_webhooks")
+}
+
+model ApiIntegrationLog {
+  id              String   @id @default(cuid())
+  endpoint        String
+  httpMethod      String
+  requestPayload  String?
+  responsePayload String?
+  statusCode      Int
+  responseTimeMs  Int
+  ipAddress       String?
+  createdAt       DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([statusCode])
+  @@map("api_integration_logs")
 }

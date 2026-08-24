@@ -8,11 +8,22 @@ import { useEffect, useState } from "react";
 
 const nav = [
   { href: "/dashboard", label: "Front Office", icon: "🏨" },
-  { href: "/dashboard/groups", label: "Group Reservations", icon: "👥" },
+  { href: "/dashboard/groups", label: "Groups", icon: "👥" },
   { href: "/dashboard/housekeeping", label: "Housekeeping", icon: "🛏️" },
   { href: "/dashboard/pos", label: "Restaurant POS", icon: "🍽️" },
+  { href: "/dashboard/conference", label: "Conference", icon: "🎤" },
+  { href: "/dashboard/services", label: "Guest Services", icon: "🛎️" },
+  { href: "/dashboard/maintenance", label: "Maintenance", icon: "🔧" },
+  { href: "/dashboard/inventory", label: "Inventory", icon: "📦" },
+  { href: "/dashboard/procurement", label: "Procurement", icon: "🧾" },
+  { href: "/dashboard/corporate", label: "Corporate", icon: "🏢" },
+  { href: "/dashboard/crm", label: "Sales & CRM", icon: "📈" },
+  { href: "/dashboard/revenue", label: "Revenue", icon: "💹" },
   { href: "/dashboard/finance", label: "Finance", icon: "📊" },
+  { href: "/dashboard/reports", label: "Reports", icon: "📋" },
   { href: "/dashboard/night-audit", label: "Night Audit", icon: "🌙" },
+  { href: "/dashboard/notifications", label: "Notifications", icon: "✉️" },
+  { href: "/dashboard/integrations", label: "Integrations", icon: "🔌" },
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -52,7 +63,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
         </div>
 
-        <nav className="flex-1 py-4 space-y-0.5">
+        <nav className="flex-1 py-4 space-y-0.5 overflow-y-auto">
           {nav.map((item) => {
             const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
             return (

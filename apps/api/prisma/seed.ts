@@ -7,12 +7,25 @@ import {
 
 const prisma = new PrismaClient();
 
+const allActions = ["VIEW", "CREATE", "EDIT", "DELETE", "CANCEL", "OVERRIDE", "EXPORT", "APPROVE"];
+const allModules = [
+  "Auth", "Reservations", "GroupReservations", "Housekeeping", "POS", "Finance", "Admin",
+  "Conference", "Inventory", "Procurement", "Maintenance", "CRM", "Corporate",
+  "Revenue", "GuestServices", "Reporting", "Notifications", "Integrations",
+];
+
 const receptionistPermissions = {
   Reservations: ["VIEW", "CREATE", "EDIT", "CANCEL"],
   GroupReservations: ["VIEW", "CREATE", "EDIT"],
   Housekeeping: ["VIEW"],
   POS: ["VIEW", "CREATE"],
   Finance: ["VIEW_LIMITED"],
+  Conference: ["VIEW", "CREATE"],
+  GuestServices: ["VIEW", "CREATE", "EDIT"],
+  Corporate: ["VIEW"],
+  CRM: ["VIEW", "CREATE"],
+  Inventory: ["VIEW"],
+  Reporting: ["VIEW"],
 };
 
 const supervisorPermissions = {
@@ -22,22 +35,64 @@ const supervisorPermissions = {
   Housekeeping: ["VIEW", "EDIT"],
   POS: ["VIEW", "CREATE", "EDIT"],
   Finance: ["VIEW"],
+  Conference: ["VIEW", "CREATE", "EDIT"],
+  Inventory: ["VIEW", "CREATE", "EDIT"],
+  Procurement: ["VIEW", "CREATE", "EDIT"],
+  Maintenance: ["VIEW", "CREATE", "EDIT"],
+  CRM: ["VIEW", "CREATE", "EDIT"],
+  Corporate: ["VIEW", "CREATE"],
+  Revenue: ["VIEW"],
+  GuestServices: ["VIEW", "CREATE", "EDIT"],
+  Reporting: ["VIEW"],
+  Notifications: ["VIEW", "CREATE"],
 };
 
-const adminPermissions = {
-  Auth: ["VIEW", "CREATE", "EDIT", "DELETE"],
-  Reservations: ["VIEW", "CREATE", "EDIT", "DELETE", "CANCEL", "OVERRIDE", "EXPORT"],
-  GroupReservations: ["VIEW", "CREATE", "EDIT", "DELETE", "CANCEL", "OVERRIDE", "EXPORT"],
-  Housekeeping: ["VIEW", "CREATE", "EDIT", "DELETE", "APPROVE"],
-  POS: ["VIEW", "CREATE", "EDIT", "DELETE", "APPROVE"],
-  Finance: ["VIEW", "CREATE", "EDIT", "APPROVE", "EXPORT"],
-  Admin: ["VIEW", "CREATE", "EDIT", "DELETE"],
-};
+const adminPermissions = Object.fromEntries(allModules.map((m) => [m, allActions]));
 
 async function main() {
   console.log("Seeding Manica Skyview Hotel ERP...");
 
   await prisma.housekeepingAssignment.deleteMany();
+  await prisma.conferenceResourceAllocation.deleteMany();
+  await prisma.conferenceBooking.deleteMany();
+  await prisma.conferencePackage.deleteMany();
+  await prisma.conferenceResource.deleteMany();
+  await prisma.conferenceVenue.deleteMany();
+  await prisma.recipeComponent.deleteMany();
+  await prisma.workOrderPart.deleteMany();
+  await prisma.workOrder.deleteMany();
+  await prisma.maintenanceTicket.deleteMany();
+  await prisma.assetMaster.deleteMany();
+  await prisma.salesActivity.deleteMany();
+  await prisma.salesLead.deleteMany();
+  await prisma.loyaltyAccount.deleteMany();
+  await prisma.guestFeedback.deleteMany();
+  await prisma.laundryItemLine.deleteMany();
+  await prisma.transitLog.deleteMany();
+  await prisma.guestServiceOrder.deleteMany();
+  await prisma.supplierInvoice.deleteMany();
+  await prisma.goodsReceivedNote.deleteMany();
+  await prisma.purchaseOrderItem.deleteMany();
+  await prisma.purchaseOrder.deleteMany();
+  await prisma.requisitionItem.deleteMany();
+  await prisma.purchaseRequisition.deleteMany();
+  await prisma.supplier.deleteMany();
+  await prisma.stockTransaction.deleteMany();
+  await prisma.stockBalance.deleteMany();
+  await prisma.inventoryItem.deleteMany();
+  await prisma.storeLocation.deleteMany();
+  await prisma.negotiatedRateContract.deleteMany();
+  await prisma.corporateCreditTransaction.deleteMany();
+  await prisma.yieldRule.deleteMany();
+  await prisma.seasonalRateAdjustment.deleteMany();
+  await prisma.promoCode.deleteMany();
+  await prisma.reportSchedule.deleteMany();
+  await prisma.notificationQueue.deleteMany();
+  await prisma.messageTemplate.deleteMany();
+  await prisma.communicationConsentLog.deleteMany();
+  await prisma.apiIntegrationLog.deleteMany();
+  await prisma.integrationWebhook.deleteMany();
+  await prisma.apiKeyCredential.deleteMany();
   await prisma.posOrderItem.deleteMany();
   await prisma.posOrder.deleteMany();
   await prisma.posSession.deleteMany();
@@ -122,12 +177,28 @@ async function main() {
   });
 
   await prisma.documentNumberingPattern.create({
-    data: {
-      module: DocumentModule.GL_ENTRIES,
-      prefix: "GL-2026-",
-      currentSequence: 1,
-      paddingDigits: 6,
-    },
+    data: { module: DocumentModule.GL_ENTRIES, prefix: "GL-2026-", currentSequence: 1, paddingDigits: 6 },
+  });
+  await prisma.documentNumberingPattern.create({
+    data: { module: DocumentModule.CONFERENCE, prefix: "EVT-2026-", currentSequence: 1, paddingDigits: 5 },
+  });
+  await prisma.documentNumberingPattern.create({
+    data: { module: DocumentModule.REQUISITIONS, prefix: "PR-2026-", currentSequence: 1, paddingDigits: 5 },
+  });
+  await prisma.documentNumberingPattern.create({
+    data: { module: DocumentModule.PO, prefix: "PO-2026-", currentSequence: 1, paddingDigits: 5 },
+  });
+  await prisma.documentNumberingPattern.create({
+    data: { module: DocumentModule.GRN, prefix: "GRN-2026-", currentSequence: 1, paddingDigits: 5 },
+  });
+  await prisma.documentNumberingPattern.create({
+    data: { module: DocumentModule.MAINTENANCE, prefix: "TKT-2026-", currentSequence: 1, paddingDigits: 4 },
+  });
+  await prisma.documentNumberingPattern.create({
+    data: { module: DocumentModule.WORK_ORDERS, prefix: "WO-2026-", currentSequence: 1, paddingDigits: 4 },
+  });
+  await prisma.documentNumberingPattern.create({
+    data: { module: DocumentModule.GUEST_SERVICES, prefix: "GSO-2026-", currentSequence: 1, paddingDigits: 4 },
   });
 
   await prisma.taxRateDefinition.createMany({
@@ -148,6 +219,9 @@ async function main() {
   const salesDept = await prisma.department.create({
     data: { name: "Sales & Marketing" },
   });
+  const fbDept = await prisma.department.create({ data: { name: "Food & Beverage" } });
+  const maintDept = await prisma.department.create({ data: { name: "Maintenance" } });
+  const procDept = await prisma.department.create({ data: { name: "Procurement" } });
 
   const adminRole = await prisma.role.create({
     data: {
@@ -414,6 +488,199 @@ async function main() {
     { outletId: lounge.id, code: "SNK-001", name: "Mixed Nuts Bowl", category: "Snacks", price: 5, cost: 1.5 },
   ];
   await prisma.menuItem.createMany({ data: menuItems });
+
+  // Conference
+  const ballroom = await prisma.conferenceVenue.create({
+    data: {
+      name: "Skyview Ballroom",
+      locationDescription: "Ground floor, garden wing",
+      maxCapacityBanquet: 180,
+      maxCapacityCinema: 220,
+      maxCapacityBoardroom: 40,
+      halfDayRate: 350,
+      fullDayRate: 600,
+    },
+  });
+  await prisma.conferenceVenue.create({
+    data: {
+      name: "Boardroom A",
+      locationDescription: "First floor",
+      maxCapacityBanquet: 20,
+      maxCapacityCinema: 30,
+      maxCapacityBoardroom: 16,
+      halfDayRate: 80,
+      fullDayRate: 140,
+    },
+  });
+  const confPkg = await prisma.conferencePackage.create({
+    data: {
+      name: "Full Day Conference Package",
+      ratePerPax: 28,
+      details: { breakfast: true, teas: true, lunch: true },
+    },
+  });
+  await prisma.conferenceResource.createMany({
+    data: [
+      { name: "Wireless Mic", totalInventoryCount: 8, dailyRentalRate: 15, category: "AV" },
+      { name: "Laser Projector", totalInventoryCount: 4, dailyRentalRate: 40, category: "AV" },
+      { name: "Flip Chart", totalInventoryCount: 10, dailyRentalRate: 8, category: "FURNITURE" },
+    ],
+  });
+  if (adminUser) {
+    await prisma.conferenceBooking.create({
+      data: {
+        bookingNumber: "EVT-2026-00001",
+        venueId: ballroom.id,
+        packageId: confPkg.id,
+        companyId: minOfHealth.id,
+        contactName: "T. Moyo",
+        startTimestamp: new Date("2026-09-02T08:00:00Z"),
+        endTimestamp: new Date("2026-09-02T17:00:00Z"),
+        setupStyle: "BANQUET",
+        estimatedPax: 80,
+        status: "CONFIRMED",
+        depositRequired: 500,
+        depositPaid: 500,
+        baseVenueCost: 600,
+        totalAmount: 600 + 80 * 28,
+        createdById: adminUser.id,
+      },
+    });
+    await prisma.documentNumberingPattern.update({
+      where: { module: DocumentModule.CONFERENCE },
+      data: { currentSequence: 2 },
+    });
+  }
+
+  // Inventory
+  const mainStore = await prisma.storeLocation.create({ data: { locationName: "Main Food & Beverage Store" } });
+  const barStore = await prisma.storeLocation.create({ data: { locationName: "Lounge Bar" } });
+  const hkStore = await prisma.storeLocation.create({ data: { locationName: "Housekeeping Store" } });
+  const maintStore = await prisma.storeLocation.create({ data: { locationName: "Maintenance Store" } });
+
+  const gin = await prisma.inventoryItem.create({
+    data: {
+      itemCode: "INV-FB-0021",
+      name: "Gin 750ml",
+      category: "F&B",
+      baseUnitOfMeasure: "Bottle",
+      currentAverageCost: 12,
+      reorderLevel: 6,
+      reorderQuantity: 12,
+    },
+  });
+  const linen = await prisma.inventoryItem.create({
+    data: {
+      itemCode: "INV-HK-0004",
+      name: "Queen Sheet Set",
+      category: "Housekeeping",
+      baseUnitOfMeasure: "Set",
+      currentAverageCost: 18,
+      reorderLevel: 20,
+      reorderQuantity: 40,
+    },
+  });
+  const spareFilter = await prisma.inventoryItem.create({
+    data: {
+      itemCode: "INV-MT-0011",
+      name: "HVAC Filter",
+      category: "Maintenance",
+      baseUnitOfMeasure: "Each",
+      currentAverageCost: 9.5,
+      reorderLevel: 4,
+      reorderQuantity: 10,
+    },
+  });
+  await prisma.stockBalance.createMany({
+    data: [
+      { itemId: gin.id, storeLocationId: barStore.id, quantityOnHand: 18 },
+      { itemId: linen.id, storeLocationId: hkStore.id, quantityOnHand: 35 },
+      { itemId: spareFilter.id, storeLocationId: maintStore.id, quantityOnHand: 8 },
+    ],
+  });
+
+  const lager = await prisma.menuItem.findUnique({ where: { code: "BEV-001" } });
+  if (lager) {
+    await prisma.recipeComponent.create({
+      data: { menuItemId: lager.id, itemId: gin.id, quantity: 0.08, unit: "Bottle" },
+    });
+  }
+
+  // Procurement
+  await prisma.supplier.create({
+    data: {
+      name: "Mutare Hotel Supplies",
+      code: "SUP-0012",
+      contactPerson: "A. Dube",
+      email: "sales@mhs.co.zw",
+      phone: "+263 20 55512",
+      paymentTermsDays: 30,
+      vatNumber: "VAT-MHS-12",
+      rating: 4.5,
+    },
+  });
+
+  // Assets / maintenance
+  await prisma.assetMaster.create({
+    data: {
+      assetCode: "AST-GEN-002",
+      name: "Standby Generator 250kVA",
+      category: "Plant",
+      purchaseDate: new Date("2021-03-15"),
+      purchaseCost: 48000,
+      currentValue: 31000,
+      depreciationRate: 0.1,
+      locationDescription: "Plant room",
+    },
+  });
+
+  // Revenue
+  const deluxe = await prisma.roomType.findUnique({ where: { code: "DLX" } });
+  if (deluxe) {
+    await prisma.yieldRule.create({
+      data: { roomTypeId: deluxe.id, occupancyThresholdPercent: 0.8, rateIncreasePercent: 0.15 },
+    });
+    await prisma.seasonalRateAdjustment.create({
+      data: {
+        roomTypeId: deluxe.id,
+        startDate: new Date("2026-12-15"),
+        endDate: new Date("2027-01-10"),
+        adjustedRate: 165,
+      },
+    });
+  }
+  await prisma.promoCode.create({
+    data: {
+      code: "SUMMER26",
+      discountType: "PERCENT",
+      discountValue: 10,
+      startDate: new Date("2026-01-01"),
+      endDate: new Date("2026-12-31"),
+      minNights: 2,
+      usageLimit: 200,
+    },
+  });
+
+  await prisma.messageTemplate.createMany({
+    data: [
+      {
+        name: "RESERVATION_CONFIRMATION_EMAIL",
+        channel: "EMAIL",
+        subjectPattern: "Booking confirmation {BookingNumber}",
+        bodyPattern: "Dear {GuestName}, your stay at Manica Skyview Hotel is confirmed. Booking {BookingNumber}.",
+      },
+      {
+        name: "EVENT_REMINDER_SMS",
+        channel: "SMS",
+        bodyPattern: "Reminder: {EventName} at {Venue} on {Date}.",
+      },
+    ],
+  });
+
+  void fbDept;
+  void maintDept;
+  void procDept;
+  void mainStore;
 
   console.log("Seed complete.");
   console.log(`Property: ${property.propertyName}`);
