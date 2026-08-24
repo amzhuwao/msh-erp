@@ -32,7 +32,7 @@ export function PortalChrome({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [guest, setGuest] = useState<GuestProfile | null>(null);
-  const bare = pathname === "/guest/login";
+  const bare = pathname === "/guest/login" || (pathname === "/" && !guest);
 
   useEffect(() => {
     setGuest(getStoredGuest());
@@ -41,7 +41,7 @@ export function PortalChrome({ children }: { children: React.ReactNode }) {
   if (bare) return <>{children}</>;
 
   return (
-    <div className="min-h-screen bg-background text-foreground flex flex-col">
+    <div className="guest-shell min-h-screen bg-background text-foreground flex flex-col">
       <header className="hidden md:block border-b border-border/70 bg-card/90 backdrop-blur sticky top-0 z-40">
         <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between gap-4">
           <Link href="/" className="flex items-center gap-2.5 min-w-0">

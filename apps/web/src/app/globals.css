@@ -229,6 +229,19 @@ h1, h2, h3, h4 {
   font-weight: 500;
 }
 
+.guest-shell {
+  --primary: 0 100% 25%;
+  --primary-foreground: 0 0% 100%;
+}
+
+.guest-shell .msh-input {
+  background: hsl(var(--muted));
+}
+
+.guest-shell .msh-btn-primary:hover:not(:disabled) {
+  background: hsl(0 100% 20%);
+}
+
 @media print {
   .no-print {
     display: none !important;

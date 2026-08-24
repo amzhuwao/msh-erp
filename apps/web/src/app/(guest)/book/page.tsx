@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
+import { GuestGate } from "@/components/portal/GuestGate";
 import { IconBed, IconPeople, IconUser } from "@/components/portal/Icons";
 import { publicApiFetch } from "@/lib/api";
 import { getGuestToken, getStoredGuest, guestApiFetch } from "@/lib/guest-api";
@@ -307,8 +308,10 @@ function Row({ label, value }: { label: string; value: string }) {
 
 export default function BookPage() {
   return (
-    <Suspense fallback={<div className="p-8 text-center text-muted-foreground">Loading…</div>}>
-      <BookForm />
-    </Suspense>
+    <GuestGate next="/book">
+      <Suspense fallback={<div className="p-8 text-center text-muted-foreground">Loading…</div>}>
+        <BookForm />
+      </Suspense>
+    </GuestGate>
   );
 }

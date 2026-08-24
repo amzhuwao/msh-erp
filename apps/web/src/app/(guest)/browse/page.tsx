@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import { GuestGate } from "@/components/portal/GuestGate";
 import { IconBed, IconCar, IconCoffee, IconPeople, IconSearch, IconWifi } from "@/components/portal/Icons";
 import { publicApiFetch } from "@/lib/api";
 import { ROOM_COLLECTION, addDaysISO, formatMoney, nightsBetween, portalAsset, roomImage, todayISO } from "@/lib/portal";
@@ -30,6 +31,14 @@ interface AvailableRoom {
 }
 
 export default function BrowsePage() {
+  return (
+    <GuestGate next="/browse">
+      <BrowseBody />
+    </GuestGate>
+  );
+}
+
+function BrowseBody() {
   const router = useRouter();
   const [checkIn, setCheckIn] = useState(todayISO());
   const [checkOut, setCheckOut] = useState(addDaysISO(todayISO(), 1));
