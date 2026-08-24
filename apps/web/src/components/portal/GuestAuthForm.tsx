@@ -1,22 +1,31 @@
 "use client";
 
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { IconEye, IconEyeOff } from "./Icons";
 import { guestLogin, guestSignup } from "@/lib/guest-api";
 import { HOTEL_WEBSITE, portalAsset } from "@/lib/portal";
 
 export function GuestAuthForm({ next = "/" }: { next?: string }) {
+  const pathname = usePathname();
   const params = useSearchParams();
   const destination = params.get("next") || next;
-  const [signup, setSignup] = useState(params.get("signup") === "true");
+  const signup = params.get("signup") === "true";
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  function authHref(mode: "signin" | "signup") {
+    const q = new URLSearchParams();
+    if (mode === "signup") q.set("signup", "true");
+    if (destination && destination !== "/") q.set("next", destination);
+    const qs = q.toString();
+    return qs ? `${pathname}?${qs}` : pathname;
+  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -71,9 +80,9 @@ export function GuestAuthForm({ next = "/" }: { next?: string }) {
                 </button>
                 <p className="text-center text-sm text-muted-foreground">
                   Already have an account?{" "}
-                  <button type="button" className="text-primary font-medium hover:underline" onClick={() => setSignup(false)}>
+                  <Link href={authHref("signin")} className="text-primary font-medium hover:underline">
                     Sign In
-                  </button>
+                  </Link>
                 </p>
               </form>
             ) : (
@@ -103,9 +112,9 @@ export function GuestAuthForm({ next = "/" }: { next?: string }) {
                 </button>
                 <p className="text-center text-sm text-muted-foreground">
                   Don&apos;t have an account?{" "}
-                  <button type="button" className="text-primary font-medium hover:underline" onClick={() => setSignup(true)}>
+                  <Link href={authHref("signup")} className="text-primary font-medium hover:underline">
                     Sign Up
-                  </button>
+                  </Link>
                 </p>
               </form>
             )}
