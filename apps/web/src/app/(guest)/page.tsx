@@ -6,17 +6,14 @@ import { getStoredGuest } from "@/lib/guest-api";
 import { GuestLanding } from "@/components/portal/GuestLanding";
 
 function HomeSwitch() {
-  const [ready, setReady] = useState(false);
   const [signedIn, setSignedIn] = useState(false);
 
   useEffect(() => {
     setSignedIn(Boolean(getStoredGuest()));
-    setReady(true);
   }, []);
 
-  if (!ready) return <div className="guest-shell min-h-screen bg-background" />;
-  if (!signedIn) return <GuestAuthForm next="/" />;
-  return <GuestLanding />;
+  if (signedIn) return <GuestLanding />;
+  return <GuestAuthForm next="/" />;
 }
 
 export default function GuestHomePage() {
