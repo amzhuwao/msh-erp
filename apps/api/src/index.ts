@@ -3,6 +3,7 @@ import cors from "cors";
 import express from "express";
 import helmet from "helmet";
 import { errorHandler, notFoundHandler } from "./middleware/http.js";
+import { accountsRouter } from "./routes/accounts.routes.js";
 import { authRouter } from "./routes/auth.routes.js";
 import { conferenceRouter } from "./routes/conference.routes.js";
 import { corporateRouter } from "./routes/corporate.routes.js";
@@ -42,11 +43,11 @@ app.get("/", (_req, res) => {
   res.json({
     name: "Manica Skyview Hotel ERP",
     property: "Manica Skyview Hotel",
-    version: "0.7.0",
+    version: "0.8.0",
     modules: [
       "Auth", "Reservations", "GroupReservations", "Housekeeping", "POS", "Conference",
       "Inventory", "Procurement", "Finance", "Maintenance", "CRM", "Corporate",
-      "Revenue", "GuestServices", "Reporting", "Notifications", "Integrations",
+      "Revenue", "GuestServices", "Reporting", "Notifications", "Integrations", "Accounts",
     ],
   });
 });
@@ -55,6 +56,7 @@ app.use("/api/health", healthRouter);
 app.use("/api/public", publicRouter);
 app.use("/api/guest", guestRouter);
 app.use("/api/auth", authRouter);
+app.use("/api/accounts", accountsRouter);
 app.use("/api/property", propertyRouter);
 app.use("/api/guests", guestsRouter);
 app.use("/api/reservations", reservationsRouter);
