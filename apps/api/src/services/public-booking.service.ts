@@ -40,6 +40,10 @@ export async function createOnlineBooking(input: {
   children?: number;
   ratePlanId: string;
   specialRequests?: string;
+  paymentMethod?: string;
+  gender?: string;
+  companyName?: string;
+  address?: string;
   ipAddress?: string;
 }) {
   assertGuestIdentity(input);
@@ -62,6 +66,9 @@ export async function createOnlineBooking(input: {
         nationality: input.nationality,
         nationalId: input.nationalId ?? guest.nationalId,
         passportNumber: input.passportNumber ?? guest.passportNumber,
+        gender: input.gender ?? guest.gender,
+        companyName: input.companyName ?? guest.companyName,
+        address: input.address ?? guest.address,
       },
     });
     assertGuestIdentity(guest);
@@ -75,6 +82,9 @@ export async function createOnlineBooking(input: {
         nationality: input.nationality,
         nationalId: input.nationalId,
         passportNumber: input.passportNumber,
+        gender: input.gender,
+        companyName: input.companyName,
+        address: input.address,
       },
     });
   }
@@ -87,18 +97,25 @@ export async function createOnlineBooking(input: {
     adults: input.adults,
     children: input.children ?? 0,
     specialRequests: input.specialRequests,
+    guestPaymentMethod: input.paymentMethod,
     source: BookingSource.ONLINE,
     createdById,
     ipAddress: input.ipAddress,
   });
 
   const property = await publicProperty();
+  const nights = Math.max(1, Math.round(
+    (new Date(input.checkOutDate).getTime() - new Date(input.checkInDate).getTime()) / 86_400_000,
+  ));
   return {
     reservation,
     quote: {
       reservationNumber: reservation.reservationNumber,
       roomType: match.name,
       nightlyRate: match.nightlyRate,
+      nights,
+      total: Number(match.nightlyRate) * nights,
+      paymentMethod: input.paymentMethod ?? "pay_on_arrival",
       paymentInstructions: property.paymentInstructions,
     },
   };

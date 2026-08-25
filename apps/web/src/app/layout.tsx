@@ -2,8 +2,8 @@ import "./globals.css";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Manica Skyview Hotel | Administration",
-  description: "Manica Skyview Hotel — Staff administration and ERP",
+  title: "Manica Skyview Hotel",
+  description: "Manica Skyview Hotel — Guest portal and staff administration",
   themeColor: "#800000",
   icons: { icon: "/logo.png" },
 };

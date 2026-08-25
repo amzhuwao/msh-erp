@@ -327,23 +327,29 @@ enum VipStatus {
 }
 
 model Guest {
-  id             String        @id @default(cuid())
-  firstName      String
-  lastName       String
-  email          String        @unique
-  phone          String?
-  nationality    String?
-  nationalId     String?
-  passportNumber String?
-  vipStatus      VipStatus     @default(NONE)
-  notes          String?
+  id               String        @id @default(cuid())
+  firstName        String
+  lastName         String
+  email            String        @unique
+  phone            String?
+  nationality      String?
+  nationalId       String?
+  passportNumber   String?
+  gender           String?
+  companyName      String?
+  address          String?
+  carRegistration  String?
+  nextOfKin        String?
+  passwordHash     String?
+  vipStatus        VipStatus     @default(NONE)
+  notes            String?
   reservations     Reservation[]
   folios           Folio[]
   loyaltyAccounts  LoyaltyAccount[]
   feedback         GuestFeedback[]
   communicationConsent CommunicationConsentLog[]
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
 
   @@map("guests")
 }
@@ -363,6 +369,7 @@ model Reservation {
   children          Int                        @default(0)
   status            ReservationStatus          @default(TENTATIVE)
   specialRequests    String?
+  guestPaymentMethod String?
   cancellationReason String?
   source             BookingSource @default(WALK_IN)
   groupReservationId String?
