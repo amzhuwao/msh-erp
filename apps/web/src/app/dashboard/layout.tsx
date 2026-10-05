@@ -25,6 +25,7 @@ const nav = [
   { href: "/dashboard/night-audit", label: "Night Audit", icon: "🌙" },
   { href: "/dashboard/notifications", label: "Notifications", icon: "✉️" },
   { href: "/dashboard/settings", label: "Property", icon: "⚙️" },
+  { href: "/dashboard/accounts", label: "Accounts", icon: "👤" },
   { href: "/dashboard/integrations", label: "Integrations", icon: "🔌" },
 ];
 
