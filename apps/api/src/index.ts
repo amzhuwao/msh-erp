@@ -6,6 +6,7 @@ import { errorHandler, notFoundHandler } from "./middleware/http.js";
 import { accountsRouter } from "./routes/accounts.routes.js";
 import { authRouter } from "./routes/auth.routes.js";
 import { conferenceRouter } from "./routes/conference.routes.js";
+import { catalogRouter } from "./routes/catalog.routes.js";
 import { corporateRouter } from "./routes/corporate.routes.js";
 import { crmRouter } from "./routes/crm.routes.js";
 import { financeRouter } from "./routes/finance.routes.js";
@@ -47,7 +48,7 @@ app.get("/", (_req, res) => {
     modules: [
       "Auth", "Reservations", "GroupReservations", "Housekeeping", "POS", "Conference",
       "Inventory", "Procurement", "Finance", "Maintenance", "CRM", "Corporate",
-      "Revenue", "GuestServices", "Reporting", "Notifications", "Integrations", "Accounts",
+      "Revenue", "GuestServices", "Reporting", "Notifications", "Integrations", "Catalog",
     ],
   });
 });
@@ -58,6 +59,7 @@ app.use("/api/guest", guestRouter);
 app.use("/api/auth", authRouter);
 app.use("/api/accounts", accountsRouter);
 app.use("/api/property", propertyRouter);
+app.use("/api/catalog", catalogRouter);
 app.use("/api/guests", guestsRouter);
 app.use("/api/reservations", reservationsRouter);
 app.use("/api/rooms", roomsRouter);
