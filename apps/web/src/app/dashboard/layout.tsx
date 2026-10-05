@@ -19,6 +19,7 @@ const nav = [
   { href: "/dashboard/corporate", label: "Corporate", icon: "🏢" },
   { href: "/dashboard/crm", label: "Sales & CRM", icon: "📈" },
   { href: "/dashboard/revenue", label: "Revenue", icon: "💹" },
+  { href: "/dashboard/catalog", label: "Catalog", icon: "🏷️" },
   { href: "/dashboard/finance", label: "Finance", icon: "📊" },
   { href: "/dashboard/reports", label: "Reports", icon: "📋" },
   { href: "/dashboard/night-audit", label: "Night Audit", icon: "🌙" },
