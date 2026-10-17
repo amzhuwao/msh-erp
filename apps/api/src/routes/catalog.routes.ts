@@ -13,6 +13,7 @@ import {
   createRoomType,
   createServiceCatalogItem,
   createVenue,
+  deleteVenue,
   listMenuItemsAdmin,
   listOutletsAdmin,
   listPackagesAdmin,
@@ -119,7 +120,7 @@ catalogRouter.get("/venues", authorize("Conference", "VIEW"), asyncHandler(async
 
 catalogRouter.post("/venues", authorize("Conference", "CREATE"), asyncHandler(async (req, res) => {
   const body = validateBody(z.object({
-    name: z.string().min(1),
+    name: z.string().trim().min(1),
     locationDescription: z.string().optional(),
     maxCapacityBanquet: z.coerce.number().int().min(1),
     maxCapacityCinema: z.coerce.number().int().min(1),
@@ -133,7 +134,7 @@ catalogRouter.post("/venues", authorize("Conference", "CREATE"), asyncHandler(as
 
 catalogRouter.put("/venues/:id", authorize("Conference", "EDIT"), asyncHandler(async (req, res) => {
   const body = validateBody(z.object({
-    name: z.string().min(1).optional(),
+    name: z.string().trim().min(1).optional(),
     locationDescription: z.string().optional(),
     maxCapacityBanquet: z.coerce.number().int().min(1).optional(),
     maxCapacityCinema: z.coerce.number().int().min(1).optional(),
@@ -145,6 +146,10 @@ catalogRouter.put("/venues/:id", authorize("Conference", "EDIT"), asyncHandler(a
   res.json(await updateVenue(paramId(req.params.id), { ...body, userId: req.user!.id }));
 }));
 
+catalogRouter.delete("/venues/:id", authorize("Conference", "DELETE"), asyncHandler(async (req, res) => {
+  res.json(await deleteVenue(paramId(req.params.id), req.user!.id));
+}));
+
 catalogRouter.get("/packages", authorize("Conference", "VIEW"), asyncHandler(async (_req, res) => {
   res.json({ items: await listPackagesAdmin() });
 }));
@@ -152,6 +157,7 @@ catalogRouter.get("/packages", authorize("Conference", "VIEW"), asyncHandler(asy
 catalogRouter.post("/packages", authorize("Conference", "CREATE"), asyncHandler(async (req, res) => {
   const body = validateBody(z.object({
     name: z.string().min(1),
+    venueId: z.string().min(1),
     ratePerPax: money,
     details: z.string().optional(),
     isActive: bool,
@@ -162,6 +168,7 @@ catalogRouter.post("/packages", authorize("Conference", "CREATE"), asyncHandler(
 catalogRouter.put("/packages/:id", authorize("Conference", "EDIT"), asyncHandler(async (req, res) => {
   const body = validateBody(z.object({
     name: z.string().min(1).optional(),
+    venueId: z.string().min(1).optional(),
     ratePerPax: money.optional(),
     details: z.string().optional(),
     isActive: bool,

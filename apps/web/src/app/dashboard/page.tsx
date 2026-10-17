@@ -9,6 +9,7 @@ import { InHouseTab } from "@/components/InHouseTab";
 import { AvailabilitySearch } from "@/components/AvailabilitySearch";
 import { GuestRegisterTab } from "@/components/GuestRegisterTab";
 import { RecheckInTab } from "@/components/RecheckInTab";
+import { ReservationCreateTab } from "@/components/ReservationCreateTab";
 import { PageHeader } from "@/components/ui/PageHeader";
 
 interface DashboardStats {
@@ -19,16 +20,28 @@ interface DashboardStats {
   roomStatusBreakdown: { status: string; _count: { status: number } }[];
 }
 
-const tabs = ["Tape Chart", "Arrivals", "Departures", "In-House", "Recheck-in", "Register", "Availability"] as const;
+interface OverdueServiceAlert {
+  id: string;
+  serviceNumber: string;
+  overdueMinutes: number;
+  reservation: { guest: { firstName: string; lastName: string }; room: { number: string } | null };
+  specialInstructions: string | null;
+}
+
+const tabs = ["Tape Chart", "Arrivals", "Departures", "In-House", "Recheck-in", "Register", "New Reservation", "Availability"] as const;
 
 export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState<(typeof tabs)[number]>("Tape Chart");
   const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [serviceAlerts, setServiceAlerts] = useState<OverdueServiceAlert[]>([]);
 
   useEffect(() => {
     apiFetch<DashboardStats>("/api/property/dashboard")
       .then(setStats)
       .catch(console.error);
+    apiFetch<{ items: OverdueServiceAlert[] }>("/api/services/overdue-alerts")
+      .then((result) => setServiceAlerts(result.items))
+      .catch(() => undefined);
   }, []);
 
   return (
@@ -50,6 +63,20 @@ export default function DashboardPage() {
         </div>
       )}
 
+      {serviceAlerts.length > 0 && (
+        <section role="alert" className="mb-6 rounded-xl border-2 border-red-400 bg-red-50 p-4 text-red-900">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="font-bold">Overdue high-priority concierge requests</h2>
+            <a className="text-sm font-semibold underline" href="/dashboard/services">Open Guest Services</a>
+          </div>
+          <ul className="mt-2 space-y-1">
+            {serviceAlerts.map((alert) => <li key={alert.id} className="text-sm">
+              {alert.reservation.room ? `Room ${alert.reservation.room.number} · ` : ""}{alert.reservation.guest.firstName} {alert.reservation.guest.lastName} · {alert.serviceNumber} · {alert.overdueMinutes} min overdue{alert.specialInstructions ? ` · ${alert.specialInstructions}` : ""}
+            </li>)}
+          </ul>
+        </section>
+      )}
+
       <div className="flex gap-1 border-b border-[hsl(var(--border))] mb-6 overflow-x-auto">
         {tabs.map((tab) => (
           <button
@@ -69,6 +96,7 @@ export default function DashboardPage() {
         {activeTab === "In-House" && <InHouseTab />}
         {activeTab === "Recheck-in" && <RecheckInTab />}
         {activeTab === "Register" && <GuestRegisterTab />}
+        {activeTab === "New Reservation" && <ReservationCreateTab />}
         {activeTab === "Availability" && <AvailabilitySearch />}
       </div>
     </div>

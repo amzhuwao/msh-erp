@@ -178,6 +178,7 @@ function serializeReservation(reservation: {
   adults: number;
   children: number;
   status: string;
+  contractedRate?: unknown;
   specialRequests: string | null;
   guestPaymentMethod: string | null;
   guest: { firstName: string; lastName: string; email: string; phone: string | null; nationality: string | null; nationalId: string | null; passportNumber: string | null; companyName: string | null };
@@ -185,7 +186,7 @@ function serializeReservation(reservation: {
   room: { number: string; roomType: { name: string } } | null;
 }) {
   const nights = nightsBetween(reservation.checkInDate, reservation.checkOutDate);
-  const nightly = Number(reservation.ratePlan.baseRate);
+  const nightly = Number(reservation.contractedRate ?? reservation.ratePlan.baseRate);
   const roomType = reservation.room?.roomType.name ?? reservation.ratePlan.roomType.name;
   return {
     id: reservation.id,

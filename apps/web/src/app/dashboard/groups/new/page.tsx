@@ -95,6 +95,7 @@ export default function NewGroupPage() {
           <Field label="Children" type="number" value={String(form.children)} onChange={(v) => setForm({ ...form, children: Number(v) })} />
           <Field label="Rooms Required" type="number" value={String(form.roomCount)} onChange={(v) => setForm({ ...form, roomCount: Number(v) })} required />
         </div>
+        <Field label="Initial Deposit" type="number" value={String(form.depositAmount)} onChange={(v) => setForm({ ...form, depositAmount: Math.max(0, Number(v)) })} />
         <button type="button" onClick={checkAvailability} className="text-sm text-[hsl(var(--accent))] hover:underline">
           Check availability
         </button>

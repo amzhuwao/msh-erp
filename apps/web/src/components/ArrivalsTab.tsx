@@ -10,7 +10,7 @@ interface Arrival {
   status: string;
   guest: { firstName: string; lastName: string; phone?: string; nationality?: string; nationalId?: string; passportNumber?: string };
   room: { number: string; roomType: { name: string } } | null;
-  ratePlan: { name: string };
+  ratePlan: { name: string; roomTypeId: string };
 }
 
 export function ArrivalsTab() {
@@ -21,11 +21,11 @@ export function ArrivalsTab() {
   const [nationality, setNationality] = useState("Zimbabwe");
   const [nationalId, setNationalId] = useState("");
   const [passportNumber, setPassportNumber] = useState("");
-  const [rooms, setRooms] = useState<{ id: string; number: string; status: string }[]>([]);
+  const [rooms, setRooms] = useState<{ id: string; number: string; status: string; roomTypeId: string }[]>([]);
 
   useEffect(() => {
     load();
-    apiFetch<{ items: { id: string; number: string; status: string }[] }>("/api/rooms")
+    apiFetch<{ items: { id: string; number: string; status: string; roomTypeId: string }[] }>("/api/rooms")
       .then((d) => setRooms(d.items.filter((r) => r.status === "INSPECTED")))
       .catch(console.error);
   }, []);
@@ -100,7 +100,7 @@ export function ArrivalsTab() {
                       <div className="space-y-2">
                         <select className="border rounded px-2 py-1 text-xs" value={roomId} onChange={(e) => setRoomId(e.target.value)}>
                           <option value="">Select room</option>
-                          {rooms.map((r) => <option key={r.id} value={r.id}>Room {r.number}</option>)}
+                          {rooms.filter((room) => room.roomTypeId === item.ratePlan.roomTypeId).map((r) => <option key={r.id} value={r.id}>Room {r.number}</option>)}
                         </select>
                         <input className="border rounded px-2 py-1 text-xs w-full" placeholder="Nationality" value={nationality} onChange={(e) => setNationality(e.target.value)} />
                         <input className="border rounded px-2 py-1 text-xs w-full" placeholder="National ID" value={nationalId} onChange={(e) => setNationalId(e.target.value)} />

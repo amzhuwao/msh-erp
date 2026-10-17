@@ -50,7 +50,7 @@ export async function salesReport(startDate: string, endDate: string) {
     orderBy: { createdAt: "asc" },
   });
   const posOrders = await prisma.posOrder.findMany({
-    where: { createdAt: { gte: start, lt: end }, status: "PAID" },
+    where: { createdAt: { gte: start, lt: end }, status: "PAID", guestServiceOrder: null },
     include: { outlet: true, items: { include: { menuItem: true } } },
   });
 
@@ -334,7 +334,7 @@ export async function reservationServicesReport(startDate: string, endDate: stri
       ratePlan: { include: { roomType: true } },
       folios: { include: { lines: true } },
       guestServiceOrders: { include: { catalogItem: true } },
-      posOrders: { include: { items: { include: { menuItem: true } }, outlet: true } },
+      posOrders: { where: { guestServiceOrder: null }, include: { items: { include: { menuItem: true } }, outlet: true } },
     },
     orderBy: { checkInDate: "asc" },
   });

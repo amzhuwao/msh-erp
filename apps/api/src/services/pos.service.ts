@@ -1,8 +1,7 @@
-import { FolioLineType, PosOrderStatus, PosPaymentMethod, PosSessionStatus, ReservationStatus } from "@prisma/client";
+import { FolioLineType, FolioStatus, PosOrderStatus, PosPaymentMethod, PosSessionStatus, ReservationStatus } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { AppError } from "../lib/errors.js";
 import { nextDocumentNumber, writeAuditLog } from "./system.service.js";
-import { postFolioCharge } from "./folio.service.js";
 import { postPosCashSale, postRoomChargeToLedger } from "./finance.service.js";
 
 export async function getPosMenu(outletId?: string) {
@@ -256,17 +255,57 @@ export async function payPosOrder(input: {
       throw new AppError(400, "POS-013", "Room number required for room charge");
     }
 
-    const validation = await validateRoomCharge(input.roomNumber);
-    const description = `POS ${order.outlet.name} — ${order.orderNumber}`;
     const department = order.outlet.code === "LOUNGE" ? "BAR" : "RESTAURANT";
+    const description = `POS ${order.outlet.name} — ${order.orderNumber}`;
+    const amount = Number(order.totalAmount);
+    const netAmount = Number(order.subTotal);
+    const taxAmount = Number(order.taxAmount);
 
-    await postFolioCharge({
-      folioId: validation.folioId!,
-      description,
-      amount: Number(order.totalAmount),
-      department,
-      userId: input.userId,
-      ipAddress: input.ipAddress,
+    const updated = await prisma.$transaction(async (tx) => {
+      const claim = await tx.posOrder.updateMany({
+        where: { id: order.id, status: { in: [PosOrderStatus.OPEN, PosOrderStatus.BILL_PRINTED] } },
+        data: {
+          status: PosOrderStatus.PAID,
+          paymentMethod: PosPaymentMethod.ROOM_CHARGE,
+          roomNumber: input.roomNumber,
+          closedAt: new Date(),
+        },
+      });
+      if (claim.count !== 1) throw new AppError(409, "POS-014", "Order was already paid or changed");
+
+      const room = await tx.room.findUnique({
+        where: { number: input.roomNumber! },
+        include: { reservations: { where: { status: ReservationStatus.CHECKED_IN }, include: { folios: { include: { lines: true } } }, take: 1 } },
+      });
+      const reservation = room?.reservations[0];
+      if (!room) throw new AppError(404, "POS-008", "Room not found");
+      if (!reservation) throw new AppError(400, "POS-009", "Room is not occupied by a checked-in guest");
+      if (reservation.cashOnly) throw new AppError(400, "POS-015", "This reservation is marked cash-only");
+
+      const folio = reservation.folios.find((candidate) => candidate.status === FolioStatus.OPEN);
+      if (!folio) throw new AppError(400, "POS-016", "No open folio is available for this reservation");
+      await tx.folioLine.create({
+        data: {
+          folioId: folio.id,
+          lineType: FolioLineType.CHARGE,
+          description,
+          amount,
+          department,
+          taxRate: netAmount > 0 ? taxAmount / netAmount : 0,
+          netAmount,
+          vatAmount: taxAmount,
+          levyAmount: 0,
+          postedById: input.userId,
+          posOrderId: order.id,
+        },
+      });
+
+      await tx.posOrder.update({ where: { id: order.id }, data: { reservationId: reservation.id } });
+
+      return tx.posOrder.findUniqueOrThrow({
+        where: { id: order.id },
+        include: { items: { include: { menuItem: true } } },
+      });
     });
 
     await postRoomChargeToLedger({
@@ -277,25 +316,13 @@ export async function payPosOrder(input: {
       userId: input.userId,
     });
 
-    const updated = await prisma.posOrder.update({
-      where: { id: order.id },
-      data: {
-        status: PosOrderStatus.PAID,
-        paymentMethod: PosPaymentMethod.ROOM_CHARGE,
-        reservationId: validation.reservationId,
-        roomNumber: input.roomNumber,
-        closedAt: new Date(),
-      },
-      include: { items: { include: { menuItem: true } } },
-    });
-
     await writeAuditLog({
       userId: input.userId,
       module: "POS",
       action: "ORDER_ROOM_CHARGE",
       entityType: "PosOrder",
       entityId: order.id,
-      details: { roomNumber: input.roomNumber, amount: Number(order.totalAmount) },
+      details: { roomNumber: input.roomNumber, amount },
       ipAddress: input.ipAddress,
     });
 

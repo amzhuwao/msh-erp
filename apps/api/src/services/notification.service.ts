@@ -50,6 +50,7 @@ export async function sendDirect(input: {
   body?: string;
   guestId?: string;
   transactional?: boolean;
+  userId?: string;
 }) {
   if (input.guestId && !input.transactional && (input.channel === "EMAIL" || input.channel === "SMS")) {
     const consent = await prisma.communicationConsentLog.findUnique({
@@ -78,8 +79,16 @@ export async function sendDirect(input: {
         if (d.getHours() >= 20) d.setDate(d.getDate() + 1);
         d.setHours(7, 0, 0, 0);
         return d;
-      })()
+    })()
     : new Date();
+
+  const delivery = quiet
+    ? { delivered: false, reason: "Scheduled until the end of SMS quiet hours" }
+    : input.channel === NotificationChannel.EMAIL
+      ? await deliverEmail(input.recipientContact, subject ?? "", body)
+      : input.channel === NotificationChannel.SMS
+        ? { delivered: false, reason: "SMS provider is not configured" }
+        : { delivered: true };
 
   const item = await prisma.notificationQueue.create({
     data: {
@@ -89,29 +98,40 @@ export async function sendDirect(input: {
       subject,
       body,
       scheduledTime,
-      status: quiet ? NotificationStatus.PENDING : NotificationStatus.SENT,
-      sentTime: quiet ? null : new Date(),
+      status: delivery.delivered ? NotificationStatus.SENT : NotificationStatus.PENDING,
+      sentTime: delivery.delivered ? new Date() : null,
+      errorMessage: delivery.delivered ? null : delivery.reason,
     },
   });
+  if (input.userId) await writeAuditLog({ userId: input.userId, module: "Notifications", action: delivery.delivered ? "MESSAGE_SENT" : "MESSAGE_QUEUED", entityType: "NotificationQueue", entityId: item.id, details: { channel: input.channel, recipientContact: input.recipientContact, reason: delivery.reason } });
   return item;
 }
 
 export async function retryNotification(id: string) {
   const item = await prisma.notificationQueue.findUnique({ where: { id } });
   if (!item) throw new AppError(404, "NTF-003", "Notification not found");
+  if (item.status === NotificationStatus.SENT) throw new AppError(409, "NTF-004", "Sent notifications cannot be retried");
   if (item.retryCount >= 3) {
     return prisma.notificationQueue.update({
       where: { id },
       data: { status: NotificationStatus.FAILED, errorMessage: "Retry limit reached" },
     });
   }
+  if (item.channel === NotificationChannel.SMS && inQuietHours()) {
+    return prisma.notificationQueue.update({ where: { id }, data: { retryCount: { increment: 1 }, status: NotificationStatus.PENDING, errorMessage: "Scheduled until the end of SMS quiet hours" } });
+  }
+  const delivery = item.channel === NotificationChannel.EMAIL
+    ? await deliverEmail(item.recipientContact, item.subject ?? "", item.body)
+    : item.channel === NotificationChannel.SMS
+      ? { delivered: false, reason: "SMS provider is not configured" }
+      : { delivered: true };
   return prisma.notificationQueue.update({
     where: { id },
     data: {
       retryCount: { increment: 1 },
-      status: NotificationStatus.SENT,
-      sentTime: new Date(),
-      errorMessage: null,
+      status: delivery.delivered ? NotificationStatus.SENT : NotificationStatus.PENDING,
+      sentTime: delivery.delivered ? new Date() : null,
+      errorMessage: delivery.delivered ? null : delivery.reason,
     },
   });
 }

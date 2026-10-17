@@ -12,6 +12,7 @@
     "build:web": "npm run build --workspace=apps/web",
     "start": "npm run start --workspace=apps/api",
     "db:generate": "npm run db:generate --workspace=apps/api",
+    "db:setup": "npm run db:generate && npm run db:push && npm run db:seed",
     "db:migrate": "npm run db:migrate --workspace=apps/api",
     "db:push": "npm run db:push --workspace=apps/api",
     "db:studio": "npm run db:studio --workspace=apps/api",

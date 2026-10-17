@@ -1,9 +1,11 @@
-import { GroupReservationStatus, GroupRoomAllocationStatus, ReservationStatus, RoomStatus } from "@prisma/client";
+import { GroupPaymentType, GroupReservationStatus, GroupRoomAllocationStatus, ReservationStatus, RoomStatus, type Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { AppError } from "../lib/errors.js";
 import { nextDocumentNumber, writeAuditLog } from "./system.service.js";
 import { assertGuestIdentity } from "../lib/identity.js";
 import { checkRoomOverlap } from "./reservation.service.js";
+import { utcToday } from "../lib/tax.js";
+import { checkOutReservation } from "./folio.service.js";
 
 function splitFullName(fullName: string): { firstName: string; lastName: string } {
   const parts = fullName.trim().split(/\s+/);
@@ -20,7 +22,7 @@ function guestEmailFromGroup(groupCode: string, guestId: string): string {
 
 async function resolveGroupGuestRoom(
   groupId: string,
-  guest: { id: string; fullName: string; roomTypeCode: string | null },
+  guest: { id: string; fullName: string; roomTypeCode: string | null; roomNumber: string | null },
   roomIdOverride?: string,
 ) {
   const allocations = await prisma.groupRoom.findMany({
@@ -32,15 +34,15 @@ async function resolveGroupGuestRoom(
     throw new AppError(400, "GRP-010", "No rooms allocated for this group");
   }
 
-  const checkedInGuests = await prisma.groupGuest.findMany({
+  const guestsWithRoomAssignments = await prisma.groupGuest.findMany({
     where: {
       groupReservationId: groupId,
-      checkInStatus: "CHECKED_IN",
+      checkInStatus: { not: "CHECKED_OUT" },
       id: { not: guest.id },
     },
     select: { roomNumber: true },
   });
-  const usedRoomNumbers = new Set(checkedInGuests.map((g) => g.roomNumber).filter(Boolean));
+  const usedRoomNumbers = new Set(guestsWithRoomAssignments.map((g) => g.roomNumber).filter(Boolean));
 
   if (roomIdOverride) {
     const allocation = allocations.find((a) => a.roomId === roomIdOverride);
@@ -51,6 +53,11 @@ async function resolveGroupGuestRoom(
       throw new AppError(409, "GRP-012", "Room is already assigned to another checked-in guest");
     }
     return allocation;
+  }
+
+  if (guest.roomNumber) {
+    const assigned = allocations.find((allocation) => allocation.room.number === guest.roomNumber);
+    if (assigned && !usedRoomNumbers.has(assigned.room.number)) return assigned;
   }
 
   const byName = allocations.find(
@@ -81,10 +88,9 @@ function toDateOnly(value: string | Date): Date {
 }
 
 export async function getGroupDashboard() {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const today = utcToday();
   const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
+  tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
 
   const [tentative, confirmed, arrivalsToday, departuresToday, cancelled] = await Promise.all([
     prisma.groupReservation.count({ where: { status: "TENTATIVE" } }),
@@ -175,7 +181,11 @@ export async function createGroupReservation(input: {
       roomCount: input.roomCount,
       specialRequests: input.specialRequests,
       depositAmount: input.depositAmount ?? 0,
+      balance: -(input.depositAmount ?? 0),
       createdById: input.createdById,
+      ...(input.depositAmount && input.depositAmount > 0 ? {
+        payments: { create: { type: GroupPaymentType.DEPOSIT, amount: input.depositAmount, paymentMethod: "UNSPECIFIED", createdById: input.createdById } },
+      } : {}),
     },
     include: { company: true },
   });
@@ -315,13 +325,14 @@ export async function allocateGroupRoom(input: {
 export async function addGroupGuest(input: {
   groupId: string;
   fullName: string;
-  nationality?: string;
+  nationality: string;
   nationalId?: string;
   passportNumber?: string;
   roomTypeCode?: string;
   vipStatus?: "NONE" | "VIP1" | "VIP2" | "VIP3";
   notes?: string;
   userId: string;
+  ipAddress?: string;
 }) {
   const group = await prisma.groupReservation.findUnique({ where: { id: input.groupId } });
   if (!group) {
@@ -330,18 +341,40 @@ export async function addGroupGuest(input: {
 
   assertGuestIdentity(input);
 
-  return prisma.groupGuest.create({
-    data: {
+  const duplicate = await prisma.groupGuest.findFirst({
+    where: {
       groupReservationId: input.groupId,
-      fullName: input.fullName,
-      nationality: input.nationality,
-      nationalId: input.nationalId,
-      passportNumber: input.passportNumber,
-      roomTypeCode: input.roomTypeCode,
-      vipStatus: input.vipStatus ?? "NONE",
-      notes: input.notes,
+      fullName: { equals: input.fullName.trim(), mode: "insensitive" },
     },
   });
+  if (duplicate) {
+    throw new AppError(409, "GRP-020", "A guest with this name is already on the group rooming list");
+  }
+
+  const guest = await prisma.groupGuest.create({
+    data: {
+      groupReservationId: input.groupId,
+      fullName: input.fullName.trim(),
+      nationality: input.nationality,
+      nationalId: input.nationalId?.trim() || undefined,
+      passportNumber: input.passportNumber?.trim() || undefined,
+      roomTypeCode: input.roomTypeCode?.trim().toUpperCase() || undefined,
+      vipStatus: input.vipStatus ?? "NONE",
+      notes: input.notes?.trim() || undefined,
+    },
+  });
+
+  await writeAuditLog({
+    userId: input.userId,
+    module: "GroupReservations",
+    action: "GROUP_GUEST_ADD",
+    entityType: "GroupGuest",
+    entityId: guest.id,
+    details: { groupCode: group.groupCode, fullName: guest.fullName },
+    ipAddress: input.ipAddress,
+  });
+
+  return guest;
 }
 
 export interface RoomingListRow {
@@ -434,7 +467,7 @@ export async function importRoomingList(input: {
 export async function getGroupFolio(groupId: string) {
   const group = await prisma.groupReservation.findUnique({
     where: { id: groupId },
-    include: { charges: true, invoices: true },
+    include: { charges: { orderBy: { chargeDate: "desc" } }, invoices: { include: { payments: true, charges: true }, orderBy: { createdAt: "desc" } }, payments: { orderBy: { createdAt: "desc" } } },
   });
   if (!group) {
     throw new AppError(404, "GRP-001", "Group reservation not found");
@@ -454,7 +487,85 @@ export async function getGroupFolio(groupId: string) {
     outstanding,
     charges: group.charges,
     invoices: group.invoices,
+    payments: group.payments,
   };
+}
+
+async function refreshGroupBalance(tx: Prisma.TransactionClient | typeof prisma, groupId: string) {
+  const [charges, payments] = await Promise.all([
+    tx.groupCharge.aggregate({ where: { groupReservationId: groupId, paidBy: { not: "GUEST" } }, _sum: { amount: true } }),
+    tx.groupPayment.aggregate({ where: { groupReservationId: groupId }, _sum: { amount: true } }),
+  ]);
+  const balance = Number(charges._sum.amount ?? 0) - Number(payments._sum.amount ?? 0);
+  await tx.groupReservation.update({ where: { id: groupId }, data: { balance } });
+  return balance;
+}
+
+export async function addGroupCharge(input: { groupId: string; chargeType: string; amount: number; paidBy: "MASTER" | "GUEST" | "COMPANY" | "SPONSOR"; userId: string; ipAddress?: string }) {
+  const group = await prisma.groupReservation.findUnique({ where: { id: input.groupId } });
+  if (!group) throw new AppError(404, "GRP-001", "Group reservation not found");
+  if (group.status === GroupReservationStatus.CLOSED || group.status === GroupReservationStatus.CANCELLED) throw new AppError(400, "GRP-021", "Cannot add charges to a closed or cancelled group");
+  const charge = await prisma.$transaction(async (tx) => {
+    const result = await tx.groupCharge.create({ data: { groupReservationId: group.id, chargeType: input.chargeType.trim(), amount: input.amount, paidBy: input.paidBy, chargeDate: utcToday() } });
+    await refreshGroupBalance(tx, group.id);
+    return result;
+  });
+  await writeAuditLog({ userId: input.userId, module: "GroupReservations", action: "GROUP_CHARGE_ADD", entityType: "GroupCharge", entityId: charge.id, details: { amount: input.amount, chargeType: input.chargeType }, ipAddress: input.ipAddress });
+  return charge;
+}
+
+export async function createGroupInvoice(input: { groupId: string; invoiceType: string; paidBy: "MASTER" | "COMPANY" | "SPONSOR"; userId: string; ipAddress?: string }) {
+  const group = await prisma.groupReservation.findUnique({ where: { id: input.groupId }, include: { charges: { where: { invoiceId: null, paidBy: input.paidBy } } } });
+  if (!group) throw new AppError(404, "GRP-001", "Group reservation not found");
+  if (group.charges.length === 0) throw new AppError(400, "GRP-022", "There are no uninvoiced master charges");
+  const invoice = await prisma.$transaction(async (tx) => {
+    const amount = group.charges.reduce((sum, charge) => sum + Number(charge.amount), 0);
+    const created = await tx.groupInvoice.create({ data: { groupReservationId: group.id, invoiceType: input.invoiceType.trim(), amount, outstanding: amount } });
+    await tx.groupCharge.updateMany({ where: { id: { in: group.charges.map((charge) => charge.id) } }, data: { invoiceId: created.id } });
+    return created;
+  });
+  await writeAuditLog({ userId: input.userId, module: "GroupReservations", action: "GROUP_INVOICE_CREATE", entityType: "GroupInvoice", entityId: invoice.id, details: { amount: Number(invoice.amount) }, ipAddress: input.ipAddress });
+  return invoice;
+}
+
+export async function recordGroupPayment(input: { groupId: string; invoiceId?: string; type: "DEPOSIT" | "INVOICE_PAYMENT"; amount: number; paymentMethod: string; reference?: string; userId: string; ipAddress?: string }) {
+  const group = await prisma.groupReservation.findUnique({ where: { id: input.groupId } });
+  if (!group) throw new AppError(404, "GRP-001", "Group reservation not found");
+  if (input.type === "INVOICE_PAYMENT" && !input.invoiceId) throw new AppError(400, "GRP-023", "Select an invoice for an invoice payment");
+  const payment = await prisma.$transaction(async (tx) => {
+    if (input.type === "INVOICE_PAYMENT") {
+      const invoice = await tx.groupInvoice.findFirst({ where: { id: input.invoiceId, groupReservationId: group.id } });
+      if (!invoice) throw new AppError(404, "GRP-024", "Group invoice not found");
+      if (input.amount > Number(invoice.outstanding) + 0.001) throw new AppError(400, "GRP-025", "Payment exceeds invoice outstanding", { outstanding: Number(invoice.outstanding) });
+      const remaining = Math.max(0, Number(invoice.outstanding) - input.amount);
+      await tx.groupInvoice.update({ where: { id: invoice.id }, data: { outstanding: remaining, status: remaining <= 0.01 ? "PAID" : "PARTIAL" } });
+    }
+    const result = await tx.groupPayment.create({ data: { groupReservationId: group.id, invoiceId: input.invoiceId, type: input.type as GroupPaymentType, amount: input.amount, paymentMethod: input.paymentMethod, reference: input.reference?.trim() || undefined, createdById: input.userId } });
+    if (input.type === "DEPOSIT") await tx.groupReservation.update({ where: { id: group.id }, data: { depositAmount: { increment: input.amount } } });
+    await refreshGroupBalance(tx, group.id);
+    return result;
+  });
+  await writeAuditLog({ userId: input.userId, module: "GroupReservations", action: input.type === "DEPOSIT" ? "GROUP_DEPOSIT_RECORD" : "GROUP_PAYMENT_RECORD", entityType: "GroupPayment", entityId: payment.id, details: { amount: input.amount, paymentMethod: input.paymentMethod, invoiceId: input.invoiceId }, ipAddress: input.ipAddress });
+  return payment;
+}
+
+export async function closeGroupReservation(input: { groupId: string; userId: string; ipAddress?: string }) {
+  const group = await prisma.groupReservation.findUnique({ where: { id: input.groupId }, include: { guests: true } });
+  if (!group) throw new AppError(404, "GRP-001", "Group reservation not found");
+  if (group.status !== GroupReservationStatus.CONFIRMED) throw new AppError(400, "GRP-026", "Only confirmed groups can be closed");
+  const activeGuests = group.guests.filter((guest) => guest.checkInStatus !== "CHECKED_OUT");
+  if (activeGuests.length) throw new AppError(400, "GRP-027", "All registered guests must check out before closing", { guestsNotCheckedOut: activeGuests.length });
+  const balance = await refreshGroupBalance(prisma, group.id);
+  if (Math.abs(balance) > 0.01) throw new AppError(400, "GRP-028", "Group balance must be settled before closing", { balance });
+  const updated = await prisma.groupReservation.update({ where: { id: group.id }, data: { status: GroupReservationStatus.CLOSED } });
+  await writeAuditLog({ userId: input.userId, module: "GroupReservations", action: "GROUP_CLOSE", entityType: "GroupReservation", entityId: group.id, ipAddress: input.ipAddress });
+  return updated;
+}
+
+export async function checkOutGroupGuest(input: { groupId: string; reservationId: string; userId: string; ipAddress?: string }) {
+  const reservation = await prisma.reservation.findFirst({ where: { id: input.reservationId, groupReservationId: input.groupId } });
+  if (!reservation) throw new AppError(404, "GRP-029", "Reservation is not part of this group");
+  return checkOutReservation({ reservationId: reservation.id, userId: input.userId, ipAddress: input.ipAddress });
 }
 
 export async function checkGroupAvailability(
@@ -660,6 +771,54 @@ export async function checkInGroupGuest(input: {
   });
 
   return result;
+}
+
+export async function assignGroupGuestRoom(input: {
+  groupId: string;
+  guestId: string;
+  roomId: string | null;
+  userId: string;
+  ipAddress?: string;
+}) {
+  const [group, guest] = await Promise.all([
+    prisma.groupReservation.findUnique({ where: { id: input.groupId } }),
+    prisma.groupGuest.findFirst({ where: { id: input.guestId, groupReservationId: input.groupId } }),
+  ]);
+  if (!group) throw new AppError(404, "GRP-001", "Group reservation not found");
+  if (!guest) throw new AppError(404, "GRP-015", "Group guest not found");
+  if (guest.checkInStatus !== "PENDING") throw new AppError(400, "GRP-030", "Room assignments can only be changed before check-in");
+  if (group.status === GroupReservationStatus.CLOSED || group.status === GroupReservationStatus.CANCELLED) {
+    throw new AppError(400, "GRP-031", "Rooms cannot be assigned to a closed or cancelled group");
+  }
+
+  const allocation = input.roomId
+    ? await prisma.groupRoom.findFirst({ where: { groupReservationId: group.id, roomId: input.roomId }, include: { room: true } })
+    : null;
+  if (input.roomId && !allocation) throw new AppError(400, "GRP-011", "Selected room is not allocated to this group");
+  if (allocation) {
+    const otherGuest = await prisma.groupGuest.findFirst({
+      where: { groupReservationId: group.id, id: { not: guest.id }, roomNumber: allocation.room.number, checkInStatus: { not: "CHECKED_OUT" } },
+    });
+    if (otherGuest) throw new AppError(409, "GRP-032", `Room ${allocation.room.number} is already assigned to ${otherGuest.fullName}`);
+  }
+
+  await prisma.$transaction(async (tx) => {
+    const oldAllocations = await tx.groupRoom.findMany({ where: { groupReservationId: group.id, assignedGuestName: guest.fullName } });
+    if (oldAllocations.length) await tx.groupRoom.updateMany({ where: { id: { in: oldAllocations.map((old) => old.id) } }, data: { assignedGuestName: null } });
+    await tx.groupGuest.update({ where: { id: guest.id }, data: { roomNumber: allocation?.room.number ?? null } });
+    if (allocation) await tx.groupRoom.update({ where: { id: allocation.id }, data: { assignedGuestName: guest.fullName } });
+  });
+
+  await writeAuditLog({
+    userId: input.userId,
+    module: "GroupReservations",
+    action: "GROUP_GUEST_ROOM_ASSIGN",
+    entityType: "GroupGuest",
+    entityId: guest.id,
+    details: { groupCode: group.groupCode, fullName: guest.fullName, roomNumber: allocation?.room.number ?? null },
+    ipAddress: input.ipAddress,
+  });
+  return { guestId: guest.id, roomNumber: allocation?.room.number ?? null };
 }
 
 export async function checkInAllGroupGuests(input: {

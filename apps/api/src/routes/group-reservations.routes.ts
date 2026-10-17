@@ -5,17 +5,23 @@ import { asyncHandler, getClientIp, validateBody, validateQuery } from "../middl
 import { paramId } from "../lib/params.js";
 import {
   addGroupGuest,
+  assignGroupGuestRoom,
+  addGroupCharge,
   allocateGroupRoom,
   checkGroupAvailability,
   checkInAllGroupGuests,
   checkInGroupGuest,
+  checkOutGroupGuest,
   confirmGroupReservation,
+  closeGroupReservation,
+  createGroupInvoice,
   createGroupReservation,
   getGroupDashboard,
   getGroupFolio,
   getGroupReservation,
   importRoomingList,
   listGroupReservations,
+  recordGroupPayment,
 } from "../services/group-reservation.service.js";
 
 export const groupReservationsRouter = Router();
@@ -140,6 +146,7 @@ groupReservationsRouter.post(
       groupId: paramId(req.params.id),
       ...body,
       userId: req.user!.id,
+      ipAddress: getClientIp(req),
     });
     res.status(201).json(guest);
   }),
@@ -217,6 +224,21 @@ groupReservationsRouter.post(
 );
 
 groupReservationsRouter.post(
+  "/:id/guests/:guestId/room",
+  authorize("GroupReservations", "EDIT"),
+  asyncHandler(async (req, res) => {
+    const body = validateBody(z.object({ roomId: z.string().nullable() }), req);
+    res.json(await assignGroupGuestRoom({
+      groupId: paramId(req.params.id),
+      guestId: paramId(req.params.guestId),
+      roomId: body.roomId,
+      userId: req.user!.id,
+      ipAddress: getClientIp(req),
+    }));
+  }),
+);
+
+groupReservationsRouter.post(
   "/:id/checkin-all",
   authorize("GroupReservations", "EDIT"),
   asyncHandler(async (req, res) => {
@@ -228,3 +250,26 @@ groupReservationsRouter.post(
     res.json(result);
   }),
 );
+
+groupReservationsRouter.post("/:id/charges", authorize("GroupReservations", "EDIT"), asyncHandler(async (req, res) => {
+  const body = validateBody(z.object({ chargeType: z.string().min(1), amount: z.number().positive(), paidBy: z.enum(["MASTER", "GUEST", "COMPANY", "SPONSOR"]).default("MASTER") }), req);
+  res.status(201).json(await addGroupCharge({ groupId: paramId(req.params.id), ...body, userId: req.user!.id, ipAddress: getClientIp(req) }));
+}));
+
+groupReservationsRouter.post("/:id/invoices", authorize("GroupReservations", "EDIT"), asyncHandler(async (req, res) => {
+  const body = validateBody(z.object({ invoiceType: z.string().min(1).default("MASTER"), paidBy: z.enum(["MASTER", "COMPANY", "SPONSOR"]).default("MASTER") }), req);
+  res.status(201).json(await createGroupInvoice({ groupId: paramId(req.params.id), ...body, userId: req.user!.id, ipAddress: getClientIp(req) }));
+}));
+
+groupReservationsRouter.post("/:id/payments", authorize("GroupReservations", "EDIT"), asyncHandler(async (req, res) => {
+  const body = validateBody(z.object({ type: z.enum(["DEPOSIT", "INVOICE_PAYMENT"]), invoiceId: z.string().optional(), amount: z.number().positive(), paymentMethod: z.string().min(1), reference: z.string().optional() }), req);
+  res.status(201).json(await recordGroupPayment({ groupId: paramId(req.params.id), ...body, userId: req.user!.id, ipAddress: getClientIp(req) }));
+}));
+
+groupReservationsRouter.post("/:id/close", authorize("GroupReservations", "EDIT"), asyncHandler(async (req, res) => {
+  res.json(await closeGroupReservation({ groupId: paramId(req.params.id), userId: req.user!.id, ipAddress: getClientIp(req) }));
+}));
+
+groupReservationsRouter.post("/:id/checkout/:reservationId", authorize("GroupReservations", "EDIT"), asyncHandler(async (req, res) => {
+  res.json(await checkOutGroupGuest({ groupId: paramId(req.params.id), reservationId: paramId(req.params.reservationId), userId: req.user!.id, ipAddress: getClientIp(req) }));
+}));

@@ -43,6 +43,8 @@ interface Venue {
 interface Package {
   id: string;
   name: string;
+  venueId: string | null;
+  venue: { id: string; name: string } | null;
   ratePerPax: string;
   details: { notes?: string } | null;
   isActive: boolean;
@@ -217,6 +219,19 @@ export default function CatalogPage() {
     }
   }
 
+  async function removeVenue(venue: Venue) {
+    if (!window.confirm(`Delete venue “${venue.name}”? This cannot be undone.`)) return;
+    setError("");
+    setMessage("");
+    try {
+      await apiFetch(`/api/catalog/venues/${venue.id}`, { method: "DELETE" });
+      setMessage(`Deleted venue ${venue.name}.`);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Venue could not be deleted");
+    }
+  }
+
   const tabs = useMemo(() => ([
     { id: "rooms" as const, label: "Rooms & rates" },
     { id: "conference" as const, label: "Conference" },
@@ -270,6 +285,17 @@ export default function CatalogPage() {
                     <select className="msh-input mt-1" value={form[key]} onChange={(e) => setForm({ ...form, [key]: e.target.value })}>
                       <option value="">Select…</option>
                       {outlets.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+                    </select>
+                  </label>
+                );
+              }
+              if (key === "venueId" && editing.kind === "package") {
+                return (
+                  <label key={key} className="text-sm block">
+                    Conference venue *
+                    <select required className="msh-input mt-1" value={form[key]} onChange={(e) => setForm({ ...form, [key]: e.target.value })}>
+                      <option value="">Select venue…</option>
+                      {venues.filter((venue) => venue.isActive).map((venue) => <option key={venue.id} value={venue.id}>{venue.name}</option>)}
                     </select>
                   </label>
                 );
@@ -428,7 +454,7 @@ export default function CatalogPage() {
                       <td className="p-3">{r.roomType.name}</td>
                       <td className="p-3">{r.status}</td>
                       <td className="p-3">{r.isActive ? "Yes" : "No"}</td>
-                      <td className="p-3 text-right">
+                      <td className="p-3 text-right whitespace-nowrap">
                         <button
                           type="button"
                           className="msh-btn msh-btn-outline text-xs"
@@ -505,6 +531,13 @@ export default function CatalogPage() {
                         >
                           Edit
                         </button>
+                        <button
+                          type="button"
+                          className="msh-btn msh-btn-outline text-xs ml-2 text-red-700"
+                          onClick={() => removeVenue(v)}
+                        >
+                          Delete
+                        </button>
                       </td>
                     </tr>
                   ))}
@@ -519,7 +552,7 @@ export default function CatalogPage() {
               <button
                 type="button"
                 className="msh-btn msh-btn-primary"
-                onClick={() => openCreate("package", { name: "", ratePerPax: "25", details: "", isActive: "true" })}
+                onClick={() => openCreate("package", { name: "", venueId: venues.find((venue) => venue.isActive)?.id ?? "", ratePerPax: "25", details: "", isActive: "true" })}
               >
                 Add package
               </button>
@@ -529,6 +562,7 @@ export default function CatalogPage() {
                 <thead className="bg-[hsl(var(--muted))] text-left">
                   <tr>
                     <th className="p-3">Name</th>
+                    <th className="p-3">Venue</th>
                     <th className="p-3">Rate / pax</th>
                     <th className="p-3">Active</th>
                     <th className="p-3" />
@@ -538,6 +572,7 @@ export default function CatalogPage() {
                   {packages.map((p) => (
                     <tr key={p.id} className="border-t border-[hsl(var(--border))]">
                       <td className="p-3 font-medium">{p.name}</td>
+                      <td className="p-3">{p.venue?.name ?? "Assign a venue"}</td>
                       <td className="p-3">{money(p.ratePerPax)}</td>
                       <td className="p-3">{p.isActive ? "Yes" : "No"}</td>
                       <td className="p-3 text-right">
@@ -546,6 +581,7 @@ export default function CatalogPage() {
                           className="msh-btn msh-btn-outline text-xs"
                           onClick={() => openEdit("package", p.id, {
                             name: p.name,
+                            venueId: p.venueId ?? "",
                             ratePerPax: String(Number(p.ratePerPax)),
                             details: p.details?.notes ?? "",
                             isActive: String(p.isActive),

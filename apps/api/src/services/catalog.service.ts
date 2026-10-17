@@ -238,9 +238,14 @@ export async function createVenue(input: {
   isActive?: boolean;
   userId: string;
 }) {
+  const name = input.name.trim();
+  if (!name) throw new AppError(400, "CAT-011", "Venue name is required");
+  const existing = await prisma.conferenceVenue.findUnique({ where: { name } });
+  if (existing) throw new AppError(409, "CAT-011", "A venue with this name already exists");
+
   const venue = await prisma.conferenceVenue.create({
     data: {
-      name: input.name.trim(),
+      name,
       locationDescription: input.locationDescription?.trim(),
       maxCapacityBanquet: input.maxCapacityBanquet,
       maxCapacityCinema: input.maxCapacityCinema,
@@ -267,10 +272,18 @@ export async function updateVenue(id: string, input: {
 }) {
   const current = await prisma.conferenceVenue.findUnique({ where: { id } });
   if (!current) throw new AppError(404, "CAT-010", "Venue not found");
+  const name = input.name?.trim();
+  if (input.name !== undefined && !name) {
+    throw new AppError(400, "CAT-011", "Venue name is required");
+  }
+  if (name && name !== current.name) {
+    const existing = await prisma.conferenceVenue.findUnique({ where: { name } });
+    if (existing) throw new AppError(409, "CAT-011", "A venue with this name already exists");
+  }
   const venue = await prisma.conferenceVenue.update({
     where: { id },
     data: {
-      name: input.name?.trim(),
+      name,
       locationDescription: input.locationDescription?.trim(),
       maxCapacityBanquet: input.maxCapacityBanquet,
       maxCapacityCinema: input.maxCapacityCinema,
@@ -284,20 +297,38 @@ export async function updateVenue(id: string, input: {
   return venue;
 }
 
+export async function deleteVenue(id: string, userId: string) {
+  const venue = await prisma.conferenceVenue.findUnique({ where: { id } });
+  if (!venue) throw new AppError(404, "CAT-010", "Venue not found");
+
+  const bookingCount = await prisma.conferenceBooking.count({ where: { venueId: id } });
+  if (bookingCount > 0) {
+    throw new AppError(409, "CAT-012", "This venue has conference bookings and cannot be deleted. Deactivate it instead.");
+  }
+
+  await prisma.conferenceVenue.delete({ where: { id } });
+  await audit(userId, "Conference", "VENUE_DELETE", "ConferenceVenue", id, { name: venue.name });
+  return { id };
+}
+
 export async function listPackagesAdmin() {
-  return prisma.conferencePackage.findMany({ orderBy: { name: "asc" } });
+  return prisma.conferencePackage.findMany({ include: { venue: { select: { id: true, name: true } } }, orderBy: { name: "asc" } });
 }
 
 export async function createPackage(input: {
   name: string;
+  venueId: string;
   ratePerPax: number;
   details?: string;
   isActive?: boolean;
   userId: string;
 }) {
+  const venue = await prisma.conferenceVenue.findFirst({ where: { id: input.venueId, isActive: true } });
+  if (!venue) throw new AppError(400, "CAT-013", "Select an active conference venue for this package");
   const pkg = await prisma.conferencePackage.create({
     data: {
       name: input.name.trim(),
+      venueId: venue.id,
       ratePerPax: input.ratePerPax,
       details: input.details ? { notes: input.details } : undefined,
       isActive: input.isActive ?? true,
@@ -309,6 +340,7 @@ export async function createPackage(input: {
 
 export async function updatePackage(id: string, input: {
   name?: string;
+  venueId?: string;
   ratePerPax?: number;
   details?: string;
   isActive?: boolean;
@@ -316,10 +348,15 @@ export async function updatePackage(id: string, input: {
 }) {
   const current = await prisma.conferencePackage.findUnique({ where: { id } });
   if (!current) throw new AppError(404, "CAT-011", "Package not found");
+  if (input.venueId) {
+    const venue = await prisma.conferenceVenue.findFirst({ where: { id: input.venueId, isActive: true } });
+    if (!venue) throw new AppError(400, "CAT-013", "Select an active conference venue for this package");
+  }
   const pkg = await prisma.conferencePackage.update({
     where: { id },
     data: {
       name: input.name?.trim(),
+      venueId: input.venueId,
       ratePerPax: input.ratePerPax,
       details: input.details !== undefined ? { notes: input.details } : undefined,
       isActive: input.isActive,

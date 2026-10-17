@@ -2,6 +2,7 @@ import { Router } from "express";
 import { prisma } from "../lib/prisma.js";
 import { authenticate, authorize } from "../middleware/auth.js";
 import { asyncHandler } from "../middleware/http.js";
+import { utcToday } from "../lib/tax.js";
 
 export const propertyRouter = Router();
 
@@ -28,10 +29,9 @@ propertyRouter.get(
   "/dashboard",
   authorize("Reservations", "VIEW"),
   asyncHandler(async (_req, res) => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const today = utcToday();
     const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
 
     const [arrivals, departures, inHouse, roomStats] = await Promise.all([
       prisma.reservation.count({

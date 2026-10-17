@@ -1,14 +1,94 @@
-import { ConferenceBookingStatus } from "@prisma/client";
+import { ConferenceBookingStatus, FolioLineType, FolioStatus, ReservationStatus } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { AppError } from "../lib/errors.js";
 import { nextDocumentNumber, writeAuditLog } from "./system.service.js";
+import { taxFieldsForCharge } from "../lib/tax.js";
 
 export async function listVenues() {
-  return prisma.conferenceVenue.findMany({ where: { isActive: true }, orderBy: { name: "asc" } });
+  return prisma.conferenceVenue.findMany({
+    include: { _count: { select: { bookings: true } } },
+    orderBy: [{ isActive: "desc" }, { name: "asc" }],
+  });
 }
 
-export async function listPackages() {
-  return prisma.conferencePackage.findMany({ where: { isActive: true }, orderBy: { name: "asc" } });
+export async function getVenue(id: string) {
+  const venue = await prisma.conferenceVenue.findUnique({ where: { id }, include: { _count: { select: { bookings: true } } } });
+  if (!venue) throw new AppError(404, "EVT-014", "Venue not found");
+  return venue;
+}
+
+export async function createVenue(input: {
+  name: string;
+  locationDescription?: string | null;
+  maxCapacityBanquet: number;
+  maxCapacityCinema: number;
+  maxCapacityBoardroom: number;
+  halfDayRate: number;
+  fullDayRate: number;
+  userId: string;
+}) {
+  const venue = await prisma.conferenceVenue.create({
+    data: {
+      name: input.name.trim(),
+      locationDescription: input.locationDescription?.trim() || null,
+      maxCapacityBanquet: input.maxCapacityBanquet,
+      maxCapacityCinema: input.maxCapacityCinema,
+      maxCapacityBoardroom: input.maxCapacityBoardroom,
+      halfDayRate: input.halfDayRate,
+      fullDayRate: input.fullDayRate,
+    },
+    include: { _count: { select: { bookings: true } } },
+  });
+  await writeAuditLog({ userId: input.userId, module: "Conference", action: "VENUE_CREATED", entityType: "ConferenceVenue", entityId: venue.id, details: { name: venue.name } });
+  return venue;
+}
+
+export async function updateVenue(id: string, input: {
+  name?: string;
+  locationDescription?: string | null;
+  maxCapacityBanquet?: number;
+  maxCapacityCinema?: number;
+  maxCapacityBoardroom?: number;
+  halfDayRate?: number;
+  fullDayRate?: number;
+  isActive?: boolean;
+  userId: string;
+}) {
+  const current = await prisma.conferenceVenue.findUnique({ where: { id } });
+  if (!current) throw new AppError(404, "EVT-014", "Venue not found");
+  const venue = await prisma.conferenceVenue.update({
+    where: { id },
+    data: {
+      name: input.name?.trim(),
+      locationDescription: input.locationDescription === undefined ? undefined : input.locationDescription?.trim() || null,
+      maxCapacityBanquet: input.maxCapacityBanquet,
+      maxCapacityCinema: input.maxCapacityCinema,
+      maxCapacityBoardroom: input.maxCapacityBoardroom,
+      halfDayRate: input.halfDayRate,
+      fullDayRate: input.fullDayRate,
+      isActive: input.isActive,
+    },
+    include: { _count: { select: { bookings: true } } },
+  });
+  await writeAuditLog({ userId: input.userId, module: "Conference", action: "VENUE_UPDATED", entityType: "ConferenceVenue", entityId: venue.id, details: { name: venue.name, isActive: venue.isActive } });
+  return venue;
+}
+
+export async function deleteVenue(id: string, userId: string) {
+  const venue = await prisma.conferenceVenue.findUnique({ where: { id }, include: { _count: { select: { bookings: true } } } });
+  if (!venue) throw new AppError(404, "EVT-014", "Venue not found");
+  if (venue._count.bookings > 0) {
+    const archived = await prisma.conferenceVenue.update({ where: { id }, data: { isActive: false } });
+    await writeAuditLog({ userId, module: "Conference", action: "VENUE_ARCHIVED", entityType: "ConferenceVenue", entityId: id, details: { name: venue.name, bookingCount: venue._count.bookings } });
+    return { deleted: false, archived: true, message: "Venue has bookings and was archived. Existing booking history is preserved." , venue: archived };
+  }
+  await prisma.conferenceVenue.delete({ where: { id } });
+  await writeAuditLog({ userId, module: "Conference", action: "VENUE_DELETED", entityType: "ConferenceVenue", entityId: id, details: { name: venue.name } });
+  return { deleted: true, archived: false, message: "Venue deleted." };
+}
+
+export async function listPackages(venueId: string) {
+  return prisma.conferencePackage.findMany({ where: { isActive: true, venueId }, orderBy: { name: "asc" } });
 }
 
 export async function listResources() {
@@ -17,9 +97,17 @@ export async function listResources() {
 
 export async function listBookings() {
   return prisma.conferenceBooking.findMany({
-    include: { venue: true, package: true, company: true, resources: { include: { resource: true } } },
+    include: { venue: true, package: true, company: true, reservation: { include: { guest: true, room: true } }, folioChargeLine: true, resources: { include: { resource: true } } },
     orderBy: { startTimestamp: "asc" },
     take: 100,
+  });
+}
+
+export async function listInHouseReservations() {
+  return prisma.reservation.findMany({
+    where: { status: ReservationStatus.CHECKED_IN },
+    include: { guest: true, room: true },
+    orderBy: { room: { number: "asc" } },
   });
 }
 
@@ -43,9 +131,11 @@ export async function createBooking(input: {
   endTimestamp: string;
   setupStyle?: "BANQUET" | "BOARDROOM" | "USHAPE" | "CINEMA";
   estimatedPax: number;
+  customVenueRate?: number;
   packageId?: string;
   groupReservationId?: string;
   companyId?: string;
+  reservationId?: string;
   depositRequired?: number;
   userId: string;
 }) {
@@ -60,11 +150,15 @@ export async function createBooking(input: {
   if (!availability.available) throw new AppError(409, "EVT-001", "Venue Already Booked");
 
   const hours = (end.getTime() - start.getTime()) / 36e5;
-  const baseVenueCost = hours <= 5 ? Number(venue.halfDayRate) : Number(venue.fullDayRate);
+  const standardVenueRate = hours <= 5 ? Number(venue.halfDayRate) : Number(venue.fullDayRate);
+  const baseVenueCost = input.customVenueRate ?? standardVenueRate;
   let packageCost = 0;
   if (input.packageId) {
     const pkg = await prisma.conferencePackage.findUnique({ where: { id: input.packageId } });
-    if (pkg) packageCost = Number(pkg.ratePerPax) * input.estimatedPax;
+    if (!pkg?.isActive || pkg.venueId !== input.venueId) {
+      throw new AppError(400, "EVT-015", "Select an active package assigned to the chosen venue");
+    }
+    packageCost = Number(pkg.ratePerPax) * input.estimatedPax;
   }
 
   const bookingNumber = await nextDocumentNumber("CONFERENCE");
@@ -75,6 +169,7 @@ export async function createBooking(input: {
       packageId: input.packageId,
       groupReservationId: input.groupReservationId,
       companyId: input.companyId,
+      reservationId: input.reservationId,
       contactName: input.contactName,
       startTimestamp: start,
       endTimestamp: end,
@@ -94,9 +189,69 @@ export async function createBooking(input: {
     action: "EVENT_CREATED",
     entityType: "ConferenceBooking",
     entityId: booking.id,
-    details: { bookingNumber },
+    details: { bookingNumber, baseVenueCost, customVenueRateApplied: input.customVenueRate !== undefined },
   });
   return booking;
+}
+
+export async function completeBooking(id: string, userId: string, ipAddress?: string) {
+  const booking = await prisma.conferenceBooking.findUnique({ where: { id } });
+  if (!booking) throw new AppError(404, "EVT-004", "Booking not found");
+  if (!booking.reservationId) throw new AppError(400, "EVT-008", "Link an in-house reservation before completing and billing this event");
+  if (booking.status !== ConferenceBookingStatus.CONFIRMED && booking.status !== ConferenceBookingStatus.IN_PROGRESS) {
+    throw new AppError(400, "EVT-009", "Only confirmed or in-progress events can be completed");
+  }
+
+  const updated = await prisma.$transaction(async (tx) => {
+    const reservation = await tx.reservation.findUnique({
+      where: { id: booking.reservationId! },
+      include: { folios: { where: { status: FolioStatus.OPEN }, include: { lines: true }, take: 1 } },
+    });
+    if (!reservation || reservation.status !== ReservationStatus.CHECKED_IN) {
+      throw new AppError(400, "EVT-010", "The linked reservation must still be checked in");
+    }
+    if (reservation.cashOnly) throw new AppError(400, "EVT-011", "This reservation is marked cash-only");
+    const folio = reservation.folios[0];
+    if (!folio) throw new AppError(400, "EVT-012", "No open folio is available for this reservation");
+
+    const claim = await tx.conferenceBooking.updateMany({
+      where: { id, status: { in: [ConferenceBookingStatus.CONFIRMED, ConferenceBookingStatus.IN_PROGRESS] } },
+      data: { status: ConferenceBookingStatus.COMPLETED },
+    });
+    if (claim.count !== 1) throw new AppError(409, "EVT-013", "Event was already completed or changed");
+
+    const tax = taxFieldsForCharge({ amount: Number(booking.totalAmount), department: "CONFERENCE" });
+    await tx.folioLine.create({
+      data: {
+        folioId: folio.id,
+        lineType: FolioLineType.CHARGE,
+        description: `Conference event ${booking.bookingNumber}`,
+        amount: tax.amount,
+        department: tax.department,
+        taxRate: tax.taxRate,
+        netAmount: tax.netAmount,
+        vatAmount: tax.vatAmount,
+        levyAmount: tax.levyAmount,
+        postedById: userId,
+        conferenceBookingId: id,
+      },
+    });
+    return tx.conferenceBooking.findUniqueOrThrow({
+      where: { id },
+      include: { venue: true, package: true, reservation: { include: { guest: true, room: true } }, folioChargeLine: true, resources: { include: { resource: true } } },
+    });
+  });
+
+  await writeAuditLog({
+    userId,
+    module: "Conference",
+    action: "EVENT_COMPLETED_AND_BILLED",
+    entityType: "ConferenceBooking",
+    entityId: id,
+    details: { reservationId: booking.reservationId, amount: Number(booking.totalAmount) },
+    ipAddress,
+  });
+  return updated;
 }
 
 export async function confirmBooking(id: string, userId: string) {

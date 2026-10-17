@@ -1,16 +1,27 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, getStoredUser } from "@/lib/api";
 import { PageHeader } from "@/components/ui/PageHeader";
 
-interface Venue { id: string; name: string; halfDayRate: string; fullDayRate: string; maxCapacityBanquet: number }
-interface Pkg { id: string; name: string; ratePerPax: string }
+interface Venue {
+  id: string; name: string; locationDescription: string | null; halfDayRate: string; fullDayRate: string;
+  maxCapacityBanquet: number; maxCapacityCinema: number; maxCapacityBoardroom: number; isActive: boolean;
+  _count?: { bookings: number };
+}
+interface VenueForm {
+  name: string; locationDescription: string; maxCapacityBanquet: string; maxCapacityCinema: string;
+  maxCapacityBoardroom: string; halfDayRate: string; fullDayRate: string; isActive: boolean;
+}
+interface Pkg { id: string; name: string; ratePerPax: string; venueId: string }
 interface Resource { id: string; name: string; totalInventoryCount: number; dailyRentalRate: string }
+interface InHouseReservation { id: string; reservationNumber: string; guest: { firstName: string; lastName: string }; room: { number: string } | null }
 interface Booking {
   id: string; bookingNumber: string; contactName: string; status: string;
   startTimestamp: string; endTimestamp: string; estimatedPax: number; totalAmount: string;
   venue: { name: string };
+  reservation: InHouseReservation | null;
+  folioChargeLine: { id: string; amount: string } | null;
 }
 
 export default function ConferencePage() {
@@ -18,60 +29,203 @@ export default function ConferencePage() {
   const [packages, setPackages] = useState<Pkg[]>([]);
   const [resources, setResources] = useState<Resource[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
-  const [form, setForm] = useState({ venueId: "", contactName: "", startTimestamp: "", endTimestamp: "", estimatedPax: 20, packageId: "" });
+  const [reservations, setReservations] = useState<InHouseReservation[]>([]);
+  const [venueEditing, setVenueEditing] = useState<Venue | "new" | null>(null);
+  const [venueSelected, setVenueSelected] = useState<Venue | null>(null);
+  const [venueForm, setVenueForm] = useState<VenueForm>({ name: "", locationDescription: "", maxCapacityBanquet: "20", maxCapacityCinema: "20", maxCapacityBoardroom: "20", halfDayRate: "0", fullDayRate: "0", isActive: true });
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+  const [savingVenue, setSavingVenue] = useState(false);
+  const [venueActions, setVenueActions] = useState({ create: false, edit: false, remove: false });
+  const [form, setForm] = useState({ venueId: "", contactName: "", startTimestamp: "", endTimestamp: "", estimatedPax: 20, customVenueRate: "", packageId: "", reservationId: "" });
 
-  function load() {
-    apiFetch<{ items: Venue[] }>("/api/conference/venues").then((d) => setVenues(d.items));
-    apiFetch<{ items: Pkg[] }>("/api/conference/packages").then((d) => setPackages(d.items));
-    apiFetch<{ items: Resource[] }>("/api/conference/resources").then((d) => setResources(d.items));
-    apiFetch<{ items: Booking[] }>("/api/conference/bookings").then((d) => setBookings(d.items));
+  async function load() {
+    const [venueResult, resourceResult, bookingResult, reservationResult] = await Promise.all([
+      apiFetch<{ items: Venue[] }>("/api/conference/venues"),
+      apiFetch<{ items: Resource[] }>("/api/conference/resources"),
+      apiFetch<{ items: Booking[] }>("/api/conference/bookings"),
+      apiFetch<{ items: InHouseReservation[] }>("/api/conference/in-house-reservations"),
+    ]);
+    setVenues(venueResult.items); setResources(resourceResult.items);
+    setBookings(bookingResult.items); setReservations(reservationResult.items);
   }
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    const permissions = getStoredUser()?.permissions.Conference ?? [];
+    setVenueActions({ create: permissions.includes("CREATE"), edit: permissions.includes("EDIT"), remove: permissions.includes("DELETE") });
+    void load().catch((err) => setError(err instanceof Error ? err.message : "Could not load conference data"));
+  }, []);
 
-  async function createBooking() {
-    await apiFetch("/api/conference/bookings", { method: "POST", body: JSON.stringify({ ...form, estimatedPax: Number(form.estimatedPax), packageId: form.packageId || undefined }) });
-    load();
+  function startNewVenue() {
+    setVenueEditing("new"); setVenueSelected(null); setMessage(""); setError("");
+    setVenueForm({ name: "", locationDescription: "", maxCapacityBanquet: "20", maxCapacityCinema: "20", maxCapacityBoardroom: "20", halfDayRate: "0", fullDayRate: "0", isActive: true });
+  }
+
+  function editVenue(venue: Venue) {
+    setVenueEditing(venue); setVenueSelected(null); setMessage(""); setError("");
+    setVenueForm({ name: venue.name, locationDescription: venue.locationDescription ?? "", maxCapacityBanquet: String(venue.maxCapacityBanquet), maxCapacityCinema: String(venue.maxCapacityCinema), maxCapacityBoardroom: String(venue.maxCapacityBoardroom), halfDayRate: String(Number(venue.halfDayRate)), fullDayRate: String(Number(venue.fullDayRate)), isActive: venue.isActive });
+  }
+
+  async function viewVenue(id: string) {
+    try { setVenueSelected(await apiFetch<Venue>(`/api/conference/venues/${id}`)); setError(""); }
+    catch (err) { setError(err instanceof Error ? err.message : "Could not load venue details"); }
+  }
+
+  async function saveVenue(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setSavingVenue(true); setError(""); setMessage("");
+    const payload = {
+      name: venueForm.name,
+      locationDescription: venueForm.locationDescription || null,
+      maxCapacityBanquet: Number(venueForm.maxCapacityBanquet),
+      maxCapacityCinema: Number(venueForm.maxCapacityCinema),
+      maxCapacityBoardroom: Number(venueForm.maxCapacityBoardroom),
+      halfDayRate: Number(venueForm.halfDayRate),
+      fullDayRate: Number(venueForm.fullDayRate),
+      ...(venueEditing !== "new" ? { isActive: venueForm.isActive } : {}),
+    };
+    try {
+      await apiFetch(venueEditing === "new" ? "/api/conference/venues" : `/api/conference/venues/${venueEditing!.id}`, {
+        method: venueEditing === "new" ? "POST" : "PUT", body: JSON.stringify(payload),
+      });
+      setMessage(venueEditing === "new" ? "Venue created." : "Venue updated."); setVenueEditing(null);
+      await load();
+    } catch (err) { setError(err instanceof Error ? err.message : "Could not save venue"); }
+    finally { setSavingVenue(false); }
+  }
+
+  async function removeVenue(venue: Venue) {
+    if (!confirm(`Remove ${venue.name}? If it has bookings, it will be archived so the booking history is kept.`)) return;
+    try {
+      const result = await apiFetch<{ message: string }>(`/api/conference/venues/${venue.id}`, { method: "DELETE" });
+      setMessage(result.message); setError(""); setVenueSelected(null); await load();
+    } catch (err) { setError(err instanceof Error ? err.message : "Could not remove venue"); }
+  }
+
+  async function selectBookingVenue(venueId: string) {
+    setForm((current) => ({ ...current, venueId, packageId: "" }));
+    setPackages([]);
+    if (!venueId) return;
+    try {
+      const result = await apiFetch<{ items: Pkg[] }>(`/api/conference/packages?venueId=${encodeURIComponent(venueId)}`);
+      setPackages(result.items);
+      setError("");
+    } catch (err) { setError(err instanceof Error ? err.message : "Could not load packages for this venue"); }
+  }
+
+  async function createBooking(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    try {
+      await apiFetch("/api/conference/bookings", { method: "POST", body: JSON.stringify({
+        venueId: form.venueId,
+        contactName: form.contactName,
+        startTimestamp: form.startTimestamp,
+        endTimestamp: form.endTimestamp,
+        estimatedPax: Number(form.estimatedPax),
+        customVenueRate: form.customVenueRate.trim() ? Number(form.customVenueRate) : undefined,
+        packageId: form.packageId || undefined,
+        reservationId: form.reservationId || undefined,
+      }) });
+      setMessage("Conference booking created."); setError(""); await load();
+      setForm({ venueId: "", contactName: "", startTimestamp: "", endTimestamp: "", estimatedPax: 20, customVenueRate: "", packageId: "", reservationId: "" });
+      setPackages([]);
+    } catch (err) { setError(err instanceof Error ? err.message : "Could not create conference booking"); }
   }
   async function confirm(id: string) {
-    await apiFetch(`/api/conference/bookings/${id}/confirm`, { method: "PUT" });
-    load();
+    try { await apiFetch(`/api/conference/bookings/${id}/confirm`, { method: "PUT" }); setMessage("Booking confirmed."); setError(""); await load(); }
+    catch (err) { setError(err instanceof Error ? err.message : "Could not confirm booking"); }
+  }
+  async function complete(id: string) {
+    try { await apiFetch(`/api/conference/bookings/${id}/complete`, { method: "POST" }); setMessage("Event completed and billed."); setError(""); await load(); }
+    catch (err) { setError(err instanceof Error ? err.message : "Could not complete event"); }
   }
 
-  const statusColor: Record<string, string> = { TENTATIVE: "bg-amber-100 text-amber-800", CONFIRMED: "bg-emerald-100 text-emerald-800", IN_PROGRESS: "bg-blue-100 text-blue-800" };
+  const selectedVenue = venues.find((venue) => venue.id === form.venueId);
+  const bookingDurationHours = form.startTimestamp && form.endTimestamp
+    ? (new Date(form.endTimestamp).getTime() - new Date(form.startTimestamp).getTime()) / 3_600_000
+    : null;
+  const standardVenueRate = selectedVenue && bookingDurationHours !== null && bookingDurationHours > 0
+    ? Number(bookingDurationHours <= 5 ? selectedVenue.halfDayRate : selectedVenue.fullDayRate)
+    : null;
+  const statusColor: Record<string, string> = { TENTATIVE: "bg-amber-100 text-amber-800", CONFIRMED: "bg-emerald-100 text-emerald-800", IN_PROGRESS: "bg-blue-100 text-blue-800", COMPLETED: "bg-slate-100 text-slate-800" };
 
   return (
     <div className="p-6">
       <PageHeader title="Conference & Events" description="Venues, packages, resource allocation, and banquet run-sheets" />
-      <div className="grid lg:grid-cols-3 gap-4 mb-6">
-        {venues.map((v) => (
-          <div key={v.id} className="msh-stat-card">
-            <div className="font-semibold">{v.name}</div>
-            <div className="text-xs text-[hsl(var(--muted-foreground))] mt-1">Banquet {v.maxCapacityBanquet} · Half ${Number(v.halfDayRate).toFixed(0)} / Full ${Number(v.fullDayRate).toFixed(0)}</div>
+      {(error || message) && <div role={error ? "alert" : "status"} className={`rounded-lg border p-3 mb-4 text-sm ${error ? "border-red-300 bg-red-50 text-red-800" : "border-emerald-300 bg-emerald-50 text-emerald-800"}`}>{error || message}</div>}
+      <section className="msh-card p-4 mb-6 space-y-4">
+        <div className="flex items-start justify-between gap-3"><div><h2 className="font-semibold">Conference venues</h2><p className="text-sm text-slate-500">Manage venue details, capacities, rates, and availability.</p></div>{venueActions.create && <button type="button" className="msh-btn msh-btn-primary" onClick={startNewVenue}>Add venue</button>}</div>
+        {venueEditing && <form onSubmit={(event) => void saveVenue(event)} className="rounded-lg border p-4 space-y-3">
+          <h3 className="font-semibold">{venueEditing === "new" ? "Create venue" : `Edit ${venueEditing.name}`}</h3>
+          <div className="grid md:grid-cols-3 gap-3">
+            <label className="block text-sm">Venue name *<input required className="msh-input mt-1" value={venueForm.name} onChange={(event) => setVenueForm({ ...venueForm, name: event.target.value })} /></label>
+            <label className="block text-sm md:col-span-2">Location / description<input className="msh-input mt-1" value={venueForm.locationDescription} onChange={(event) => setVenueForm({ ...venueForm, locationDescription: event.target.value })} /></label>
+            <label className="block text-sm">Banquet capacity *<input required min="1" type="number" className="msh-input mt-1" value={venueForm.maxCapacityBanquet} onChange={(event) => setVenueForm({ ...venueForm, maxCapacityBanquet: event.target.value })} /></label>
+            <label className="block text-sm">Cinema capacity *<input required min="1" type="number" className="msh-input mt-1" value={venueForm.maxCapacityCinema} onChange={(event) => setVenueForm({ ...venueForm, maxCapacityCinema: event.target.value })} /></label>
+            <label className="block text-sm">Boardroom capacity *<input required min="1" type="number" className="msh-input mt-1" value={venueForm.maxCapacityBoardroom} onChange={(event) => setVenueForm({ ...venueForm, maxCapacityBoardroom: event.target.value })} /></label>
+            <label className="block text-sm">Half-day rate *<input required min="0" step="0.01" type="number" className="msh-input mt-1" value={venueForm.halfDayRate} onChange={(event) => setVenueForm({ ...venueForm, halfDayRate: event.target.value })} /></label>
+            <label className="block text-sm">Full-day rate *<input required min="0" step="0.01" type="number" className="msh-input mt-1" value={venueForm.fullDayRate} onChange={(event) => setVenueForm({ ...venueForm, fullDayRate: event.target.value })} /></label>
+            {venueEditing !== "new" && <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={venueForm.isActive} onChange={(event) => setVenueForm({ ...venueForm, isActive: event.target.checked })} /> Active and available for new bookings</label>}
           </div>
-        ))}
-      </div>
+          <div className="flex gap-2"><button className="msh-btn msh-btn-primary" type="submit" disabled={savingVenue}>{savingVenue ? "Saving…" : "Save venue"}</button><button className="msh-btn msh-btn-outline" type="button" onClick={() => setVenueEditing(null)}>Cancel</button></div>
+        </form>}
+        <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-3">
+          {venues.map((venue) => <article key={venue.id} className="rounded-lg border p-4">
+            <div className="flex items-start justify-between gap-2"><h3 className="font-semibold">{venue.name}</h3><span className={`msh-badge ${venue.isActive ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-600"}`}>{venue.isActive ? "Active" : "Archived"}</span></div>
+            <p className="mt-1 text-sm text-slate-500">{venue.locationDescription || "No location description"}</p>
+            <p className="mt-3 text-xs">Banquet {venue.maxCapacityBanquet} · Cinema {venue.maxCapacityCinema} · Boardroom {venue.maxCapacityBoardroom}</p>
+            <p className="text-xs text-slate-600">Half day ${Number(venue.halfDayRate).toFixed(2)} · Full day ${Number(venue.fullDayRate).toFixed(2)}</p>
+            <div className="mt-3 flex flex-wrap gap-2"><button type="button" className="msh-btn msh-btn-outline text-xs" onClick={() => void viewVenue(venue.id)}>View</button>{venueActions.edit && <button type="button" className="msh-btn msh-btn-outline text-xs" onClick={() => editVenue(venue)}>Edit</button>}{venueActions.remove && <button type="button" className="msh-btn msh-btn-outline text-xs text-red-700" onClick={() => void removeVenue(venue)}>Delete / archive</button>}</div>
+          </article>)}
+          {venues.length === 0 && <p className="text-sm text-slate-500">No conference venues configured.</p>}
+        </div>
+        {venueSelected && <div className="rounded-lg bg-slate-50 p-4 text-sm"><div className="flex justify-between"><h3 className="font-semibold">{venueSelected.name} details</h3><button type="button" className="text-slate-500" onClick={() => setVenueSelected(null)}>Close</button></div><p>{venueSelected.locationDescription || "No location description"}</p><p className="mt-1">{venueSelected._count?.bookings ?? 0} linked booking(s)</p></div>}
+      </section>
       <section className="msh-card p-4 mb-6">
         <h2 className="font-semibold mb-3">New booking</h2>
-        <div className="grid md:grid-cols-3 gap-2">
-          <select className="msh-input" value={form.venueId} onChange={(e) => setForm({ ...form, venueId: e.target.value })}>
-            <option value="">Venue…</option>
-            {venues.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
-          </select>
-          <input className="msh-input" placeholder="Contact name" value={form.contactName} onChange={(e) => setForm({ ...form, contactName: e.target.value })} />
-          <input className="msh-input" type="datetime-local" value={form.startTimestamp} onChange={(e) => setForm({ ...form, startTimestamp: e.target.value })} />
-          <input className="msh-input" type="datetime-local" value={form.endTimestamp} onChange={(e) => setForm({ ...form, endTimestamp: e.target.value })} />
-          <input className="msh-input" type="number" placeholder="Pax" value={form.estimatedPax} onChange={(e) => setForm({ ...form, estimatedPax: Number(e.target.value) })} />
-          <select className="msh-input" value={form.packageId} onChange={(e) => setForm({ ...form, packageId: e.target.value })}>
-            <option value="">No package</option>
-            {packages.map((p) => <option key={p.id} value={p.id}>{p.name} (${Number(p.ratePerPax)}/pax)</option>)}
-          </select>
-        </div>
-        <button className="msh-btn msh-btn-primary mt-3" onClick={createBooking}>Create booking</button>
+        <form onSubmit={(event) => void createBooking(event)} className="space-y-3">
+          <div className="grid md:grid-cols-3 gap-3">
+            <label className="block text-sm">Venue *
+              <select required className="msh-input mt-1" value={form.venueId} onChange={(e) => void selectBookingVenue(e.target.value)}>
+                <option value="">Select an active venue</option>
+                {venues.filter((v) => v.isActive).map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+              </select>
+            </label>
+            <label className="block text-sm">Contact name *
+              <input required className="msh-input mt-1" autoComplete="name" value={form.contactName} onChange={(e) => setForm({ ...form, contactName: e.target.value })} />
+            </label>
+            <label className="block text-sm">Expected attendees *
+              <input required min="1" step="1" className="msh-input mt-1" type="number" value={form.estimatedPax} onChange={(e) => setForm({ ...form, estimatedPax: Number(e.target.value) })} />
+            </label>
+            <label className="block text-sm">Start date and time *
+              <input required className="msh-input mt-1" type="datetime-local" value={form.startTimestamp} onChange={(e) => setForm({ ...form, startTimestamp: e.target.value })} />
+            </label>
+            <label className="block text-sm">End date and time *
+              <input required className="msh-input mt-1" type="datetime-local" min={form.startTimestamp || undefined} value={form.endTimestamp} onChange={(e) => setForm({ ...form, endTimestamp: e.target.value })} />
+            </label>
+            <label className="block text-sm">Package (optional)
+              <select className="msh-input mt-1" value={form.packageId} onChange={(e) => setForm({ ...form, packageId: e.target.value })}>
+                <option value="">{form.venueId ? (packages.length ? "No package" : "No packages assigned to this venue") : "Choose a venue first"}</option>
+                {packages.map((p) => <option key={p.id} value={p.id}>{p.name} (${Number(p.ratePerPax)}/person)</option>)}
+              </select>
+              {form.venueId && packages.length === 0 && <span className="mt-1 block text-xs text-slate-500">Assign packages to this venue in Catalog → Conference.</span>}
+            </label>
+            <label className="block text-sm">Custom venue rate (optional, USD)
+              <input min="0" step="0.01" className="msh-input mt-1" type="number" inputMode="decimal" placeholder="Use venue's standard rate" value={form.customVenueRate} onChange={(e) => setForm({ ...form, customVenueRate: e.target.value })} />
+              <span className="mt-1 block text-xs text-slate-500">{standardVenueRate === null ? "Leave blank to use the venue’s standard half-day or full-day rate." : `Standard venue rate for this duration: $${standardVenueRate.toFixed(2)}.`} A custom amount replaces the venue charge; package charges are added separately.</span>
+            </label>
+            <label className="block text-sm md:col-span-2">Link an in-house guest for folio billing (optional)
+              <select className="msh-input mt-1" value={form.reservationId} onChange={(e) => setForm({ ...form, reservationId: e.target.value })}>
+                <option value="">No guest linked</option>
+                {reservations.map((r) => <option key={r.id} value={r.id}>{r.room?.number ?? "No room"} · {r.guest.firstName} {r.guest.lastName} · {r.reservationNumber}</option>)}
+              </select>
+            </label>
+          </div>
+          <button className="msh-btn msh-btn-primary" type="submit">Create booking</button>
+        </form>
       </section>
       <section className="msh-card overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-[hsl(var(--muted))] text-left text-[hsl(var(--muted-foreground))]">
-            <tr><th className="p-3">Number</th><th className="p-3">Venue</th><th className="p-3">Contact</th><th className="p-3">When</th><th className="p-3">Total</th><th className="p-3">Status</th><th className="p-3" /></tr>
+            <tr><th className="p-3">Number</th><th className="p-3">Venue</th><th className="p-3">Contact</th><th className="p-3">Guest / room</th><th className="p-3">When</th><th className="p-3">Total</th><th className="p-3">Status</th><th className="p-3" /></tr>
           </thead>
           <tbody>
             {bookings.map((b) => (
@@ -79,10 +233,11 @@ export default function ConferencePage() {
                 <td className="p-3 font-mono text-xs">{b.bookingNumber}</td>
                 <td className="p-3">{b.venue.name}</td>
                 <td className="p-3">{b.contactName}</td>
+                <td className="p-3">{b.reservation ? `${b.reservation.guest.firstName} ${b.reservation.guest.lastName} · ${b.reservation.room?.number ?? "—"}` : "Not linked"}</td>
                 <td className="p-3 text-xs">{b.startTimestamp.slice(0, 16).replace("T", " ")}</td>
                 <td className="p-3">${Number(b.totalAmount).toFixed(2)}</td>
                 <td className="p-3"><span className={`msh-badge ${statusColor[b.status] ?? "bg-[hsl(var(--muted))]"}`}>{b.status}</span></td>
-                <td className="p-3">{b.status === "TENTATIVE" && <button className="text-xs text-[hsl(var(--accent))]" onClick={() => confirm(b.id)}>Confirm</button>}</td>
+                <td className="p-3">{b.status === "TENTATIVE" && <button className="text-xs text-[hsl(var(--accent))]" onClick={() => confirm(b.id)}>Confirm</button>}{["CONFIRMED", "IN_PROGRESS"].includes(b.status) && <button className="text-xs text-[hsl(var(--accent))]" onClick={() => complete(b.id)}>Complete & bill</button>}{b.folioChargeLine && <span className="text-xs text-emerald-700">Billed to folio</span>}</td>
               </tr>
             ))}
           </tbody>

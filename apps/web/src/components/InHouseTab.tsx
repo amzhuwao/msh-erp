@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
+import { FolioPanel } from "./FolioPanel";
 
 interface InHouse {
   id: string;
@@ -9,12 +10,14 @@ interface InHouse {
   guest: { firstName: string; lastName: string; email: string };
   room: { number: string; roomType: { name: string } } | null;
   checkOutDate: string;
+  folios: { id: string }[];
 }
 
 export function InHouseTab() {
   const [items, setItems] = useState<InHouse[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
+  const [folioId, setFolioId] = useState<string | null>(null);
 
   useEffect(() => {
     const timer = setTimeout(load, 300);
@@ -28,6 +31,19 @@ export function InHouseTab() {
       .then((d) => setItems(d.items))
       .catch(console.error)
       .finally(() => setLoading(false));
+  }
+
+  async function checkOut(id: string) {
+    try {
+      await apiFetch(`/api/reservations/${id}/checkout`, { method: "POST" });
+      load();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Check-out failed");
+    }
+  }
+
+  if (folioId) {
+    return <FolioPanel folioId={folioId} onClose={() => { setFolioId(null); load(); }} />;
   }
 
   return (
@@ -53,6 +69,7 @@ export function InHouseTab() {
               <th className="py-2 pr-4">Guest</th>
               <th className="py-2 pr-4">Room Type</th>
               <th className="py-2">Check-Out</th>
+              <th className="py-2">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -67,6 +84,10 @@ export function InHouseTab() {
                 </td>
                 <td className="py-3 pr-4">{item.room?.roomType.name}</td>
                 <td className="py-3">{item.checkOutDate.slice(0, 10)}</td>
+                <td className="py-3 flex gap-2">
+                  {item.folios[0] && <button onClick={() => setFolioId(item.folios[0]!.id)} className="border border-[hsl(var(--border))] px-3 py-1.5 rounded text-xs">Folio</button>}
+                  <button onClick={() => checkOut(item.id)} className="bg-[hsl(var(--primary))] text-white px-3 py-1.5 rounded text-xs">Check Out</button>
+                </td>
               </tr>
             ))}
           </tbody>

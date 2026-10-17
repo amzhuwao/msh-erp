@@ -133,7 +133,7 @@ export async function revenueMetrics(startDate: string, endDate: string) {
     const to = r.checkOutDate < end ? r.checkOutDate : end;
     const stay = Math.max(0, Math.round((to.getTime() - from.getTime()) / 86400000));
     occupiedRoomNights += stay;
-    roomRevenue += stay * Number(r.ratePlan.baseRate);
+    roomRevenue += stay * Number(r.contractedRate ?? r.ratePlan.baseRate);
   }
 
   const occupancy = availableRoomNights === 0 ? 0 : occupiedRoomNights / availableRoomNights;

@@ -5,7 +5,7 @@ import { apiFetch } from "@/lib/api";
 import { PageHeader } from "@/components/ui/PageHeader";
 
 interface Template { id: string; name: string; channel: string; bodyPattern: string }
-interface QueueItem { id: string; recipientContact: string; channel: string; status: string; subject: string | null; body: string }
+interface QueueItem { id: string; recipientContact: string; channel: string; status: string; subject: string | null; body: string; errorMessage: string | null; retryCount: number }
 
 export default function NotificationsPage() {
   const [templates, setTemplates] = useState<Template[]>([]);
@@ -25,10 +25,15 @@ export default function NotificationsPage() {
         recipientContact: form.recipientContact,
         channel: form.channel,
         templateName: form.templateName,
-        transactional: true,
+        transactional: false,
         variables: { GuestName: form.GuestName, BookingNumber: form.BookingNumber },
       }),
     });
+    load();
+  }
+
+  async function retry(id: string) {
+    await apiFetch(`/api/notifications/${id}/retry`, { method: "POST" });
     load();
   }
 
@@ -51,7 +56,7 @@ export default function NotificationsPage() {
       <section className="msh-card overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-[hsl(var(--muted))] text-left text-[hsl(var(--muted-foreground))]">
-            <tr><th className="p-3">To</th><th className="p-3">Channel</th><th className="p-3">Status</th><th className="p-3">Body</th></tr>
+            <tr><th className="p-3">To</th><th className="p-3">Channel</th><th className="p-3">Status</th><th className="p-3">Body / delivery note</th><th /></tr>
           </thead>
           <tbody>
             {queue.map((q) => (
@@ -59,7 +64,8 @@ export default function NotificationsPage() {
                 <td className="p-3">{q.recipientContact}</td>
                 <td className="p-3">{q.channel}</td>
                 <td className="p-3">{q.status}</td>
-                <td className="p-3 text-xs truncate max-w-sm">{q.body}</td>
+                <td className="p-3 text-xs max-w-sm">{q.body}{q.errorMessage && <div className="text-amber-700 mt-1">{q.errorMessage}</div>}</td>
+                <td className="p-3">{q.status !== "SENT" && q.retryCount < 3 && <button className="text-xs border rounded px-2 py-1" onClick={() => retry(q.id)}>Retry delivery</button>}</td>
               </tr>
             ))}
           </tbody>

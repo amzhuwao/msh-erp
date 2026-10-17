@@ -63,6 +63,7 @@ enum DocumentModule {
   MAINTENANCE
   WORK_ORDERS
   GUEST_SERVICES
+  HOUSEKEEPING_ISSUES
 }
 
 model DocumentNumberingPattern {
@@ -136,12 +137,23 @@ model User {
   auditLogs             AuditLog[]
   conferenceBookings    ConferenceBooking[]     @relation("ConferenceCreatedBy")
   stockTransactions     StockTransaction[]
+  stockAdjustmentsRequested StockCountAdjustment[] @relation("StockCountRequestedBy")
+  stockAdjustmentsApproved StockCountAdjustment[] @relation("StockCountApprovedBy")
   requisitionsRequested PurchaseRequisition[]   @relation("RequisitionRequester")
   requisitionsApproved  PurchaseRequisition[]   @relation("RequisitionApprover")
   purchaseOrdersCreated PurchaseOrder[]         @relation("POCreatedBy")
   purchaseOrdersApproved PurchaseOrder[]        @relation("POApprovedBy")
+  purchaseOrderApprovals PurchaseOrderApproval[]
+  preventiveMaintenancePlans PreventiveMaintenancePlan[]
   grnsReceived          GoodsReceivedNote[]
   maintenanceTickets    MaintenanceTicket[]
+  housekeepingAssignments HousekeepingAssignment[]
+  roomCleaningLogs     RoomCleanLog[]          @relation("RoomCleanAttendant")
+  supervisedCleaningLogs RoomCleanLog[]         @relation("RoomCleanSupervisor")
+  lostAndFoundItems     LostAndFound[]
+  housekeepingSupplyIssues HousekeepingSupplyIssue[] @relation("SupplyIssueAttendant")
+  createdHousekeepingSupplyIssues HousekeepingSupplyIssue[] @relation("SupplyIssueCreatedBy")
+  approvedHousekeepingSupplyIssues HousekeepingSupplyIssue[] @relation("SupplyIssueApprovedBy")
   workOrders            WorkOrder[]
   salesLeads            SalesLead[]
   creditTransactions    CorporateCreditTransaction[]
@@ -252,6 +264,7 @@ model HousekeepingAssignment {
   roomId            String
   room              Room             @relation(fields: [roomId], references: [id])
   attendantUserId   String
+  attendant         User             @relation(fields: [attendantUserId], references: [id])
   status            AssignmentStatus @default(PENDING)
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
@@ -259,6 +272,111 @@ model HousekeepingAssignment {
   @@unique([date, roomId])
   @@index([attendantUserId])
   @@map("housekeeping_assignments")
+}
+
+model RoomCleanLog {
+  id                 String    @id @default(cuid())
+  roomId             String
+  room               Room      @relation(fields: [roomId], references: [id])
+  attendantUserId    String
+  attendant          User      @relation("RoomCleanAttendant", fields: [attendantUserId], references: [id])
+  supervisorUserId   String?
+  supervisor         User?     @relation("RoomCleanSupervisor", fields: [supervisorUserId], references: [id])
+  startTime          DateTime  @default(now())
+  endTime            DateTime?
+  initialStatus      RoomStatus
+  targetStatus       RoomStatus
+  inspectionPassed   Boolean?
+  rejectionNotes     String?
+  notes              String?
+
+  @@index([roomId, startTime])
+  @@index([attendantUserId, startTime])
+  @@map("room_clean_logs")
+}
+
+enum LostAndFoundStatus {
+  UNCLAIMED
+  CLAIMED
+  DISPOSED
+  DONATED
+}
+
+model LostAndFound {
+  id               String              @id @default(cuid())
+  itemDescription  String
+  locationFound    String
+  dateFound        DateTime            @db.Date
+  foundByUserId    String
+  foundBy          User                @relation(fields: [foundByUserId], references: [id])
+  status           LostAndFoundStatus  @default(UNCLAIMED)
+  claimedBy        String?
+  claimedDate      DateTime?           @db.Date
+  storageLocation  String?
+  notes            String?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  @@index([status, dateFound])
+  @@map("lost_and_found")
+}
+
+model HousekeepingSupplyStandard {
+  id              String        @id @default(cuid())
+  itemId          String
+  item            InventoryItem @relation(fields: [itemId], references: [id])
+  storeLocationId String
+  storeLocation   StoreLocation @relation(fields: [storeLocationId], references: [id])
+  quantityPerRoom Decimal       @db.Decimal(12, 2)
+  isActive        Boolean       @default(true)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@unique([itemId, storeLocationId])
+  @@map("housekeeping_supply_standards")
+}
+
+enum HousekeepingSupplyIssueStatus {
+  DRAFT
+  APPROVED
+  REJECTED
+}
+
+model HousekeepingSupplyIssue {
+  id               String                         @id @default(cuid())
+  issueNumber      String                         @unique
+  date             DateTime                       @db.Date
+  attendantUserId  String
+  attendant        User                           @relation("SupplyIssueAttendant", fields: [attendantUserId], references: [id])
+  roomCount        Int
+  status           HousekeepingSupplyIssueStatus @default(DRAFT)
+  createdById      String
+  createdBy        User                           @relation("SupplyIssueCreatedBy", fields: [createdById], references: [id])
+  approvedById     String?
+  approvedBy       User?                          @relation("SupplyIssueApprovedBy", fields: [approvedById], references: [id])
+  approvedAt       DateTime?
+  lines            HousekeepingSupplyIssueLine[]
+  createdAt        DateTime                       @default(now())
+  updatedAt        DateTime                       @updatedAt
+
+  @@unique([date, attendantUserId])
+  @@index([status, date])
+  @@map("housekeeping_supply_issues")
+}
+
+model HousekeepingSupplyIssueLine {
+  id              String                  @id @default(cuid())
+  issueId         String
+  issue           HousekeepingSupplyIssue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  itemId          String
+  item            InventoryItem           @relation(fields: [itemId], references: [id])
+  storeLocationId String
+  storeLocation   StoreLocation           @relation(fields: [storeLocationId], references: [id])
+  quantityPerRoom Decimal                 @db.Decimal(12, 2)
+  quantity        Decimal                 @db.Decimal(12, 2)
+
+  @@unique([issueId, itemId, storeLocationId])
+  @@map("housekeeping_supply_issue_lines")
 }
 
 model Room {
@@ -272,6 +390,7 @@ model Room {
   reservations       Reservation[]
   groupRooms         GroupRoom[]
   assignments        HousekeepingAssignment[]
+  cleaningLogs       RoomCleanLog[]
   maintenanceTickets MaintenanceTicket[]
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
@@ -370,16 +489,23 @@ model Reservation {
   status            ReservationStatus          @default(TENTATIVE)
   specialRequests    String?
   guestPaymentMethod String?
+  cashOnly           Boolean                  @default(false)
   cancellationReason String?
   source             BookingSource @default(WALK_IN)
   groupReservationId String?
   groupReservation   GroupReservation?   @relation(fields: [groupReservationId], references: [id])
+  corporateCompanyId String?
+  corporateCompany   CorporateProfile?  @relation(fields: [corporateCompanyId], references: [id])
+  contractedRate     Decimal?            @db.Decimal(10, 2)
+  corporateBillingDepartments String[]   @default([])
   createdById       String
   createdBy         User                       @relation("ReservationCreatedBy", fields: [createdById], references: [id])
   statusHistory     ReservationStatusHistory[]
   folios             Folio[]
   posOrders          PosOrder[]
   guestServiceOrders GuestServiceOrder[]
+  conferenceBookings ConferenceBooking[]
+  corporateInvoices  CorporateInvoice[]
   createdAt         DateTime                   @default(now())
   updatedAt         DateTime                   @updatedAt
 
@@ -449,6 +575,10 @@ model FolioLine {
   levyAmount     Decimal       @default(0) @db.Decimal(10, 2)
   paymentMethod  String?
   postedById     String?
+  posOrderId     String?       @unique
+  posOrder       PosOrder?     @relation(fields: [posOrderId], references: [id])
+  conferenceBookingId String?  @unique
+  conferenceBooking ConferenceBooking? @relation(fields: [conferenceBookingId], references: [id])
   createdAt      DateTime      @default(now())
 
   @@index([folioId])
@@ -470,10 +600,13 @@ model CorporateProfile {
   paymentTermsDays   Int                @default(30)
   isCreditApproved   Boolean            @default(false)
   isActive           Boolean            @default(true)
+  corporatePaidDepartments String[]     @default(["ROOMS"])
   groupReservations  GroupReservation[]
   contracts          NegotiatedRateContract[]
   creditTransactions CorporateCreditTransaction[]
   conferenceBookings ConferenceBooking[]
+  reservations       Reservation[]
+  invoices           CorporateInvoice[]
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
 
@@ -537,6 +670,7 @@ model GroupReservation {
   roomAllocations GroupRoom[]
   charges         GroupCharge[]
   invoices        GroupInvoice[]
+  payments        GroupPayment[]
   reservations       Reservation[]
   conferenceBookings ConferenceBooking[]
   createdAt          DateTime               @default(now())
@@ -596,6 +730,8 @@ model GroupCharge {
   chargeType         String
   amount             Decimal           @db.Decimal(10, 2)
   paidBy             GroupChargePaidBy @default(MASTER)
+  invoiceId          String?
+  invoice            GroupInvoice?      @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
   chargeDate         DateTime          @db.Date
   createdAt          DateTime          @default(now())
 
@@ -611,11 +747,36 @@ model GroupInvoice {
   amount             Decimal            @db.Decimal(10, 2)
   outstanding        Decimal            @db.Decimal(10, 2)
   status             GroupInvoiceStatus @default(UNPAID)
+  charges            GroupCharge[]
+  payments           GroupPayment[]
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
 
   @@index([groupReservationId])
   @@map("group_invoices")
+}
+
+enum GroupPaymentType {
+  DEPOSIT
+  INVOICE_PAYMENT
+}
+
+model GroupPayment {
+  id                 String              @id @default(cuid())
+  groupReservationId String
+  groupReservation   GroupReservation    @relation(fields: [groupReservationId], references: [id], onDelete: Cascade)
+  invoiceId          String?
+  invoice            GroupInvoice?       @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  type               GroupPaymentType
+  amount             Decimal             @db.Decimal(10, 2)
+  paymentMethod      String
+  reference          String?
+  createdById        String
+  createdAt          DateTime            @default(now())
+
+  @@index([groupReservationId])
+  @@index([invoiceId])
+  @@map("group_payments")
 }
 
 // ─── Module 4: Restaurant & Bar POS ─────────────────────────────────────────
@@ -717,6 +878,8 @@ model PosOrder {
   roomNumber      String?
   closedAt        DateTime?
   items           PosOrderItem[]
+  guestServiceOrder GuestServiceOrder?
+  folioChargeLine FolioLine?
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
 
@@ -854,6 +1017,7 @@ model ConferenceVenue {
   fullDayRate          Decimal             @db.Decimal(10, 2)
   isActive             Boolean             @default(true)
   bookings             ConferenceBooking[]
+  packages             ConferencePackage[]
   createdAt            DateTime            @default(now())
   updatedAt            DateTime            @updatedAt
 
@@ -863,6 +1027,8 @@ model ConferenceVenue {
 model ConferencePackage {
   id         String              @id @default(cuid())
   name       String
+  venueId    String?
+  venue      ConferenceVenue?    @relation(fields: [venueId], references: [id])
   ratePerPax Decimal             @db.Decimal(10, 2)
   details    Json?
   isActive   Boolean             @default(true)
@@ -870,6 +1036,7 @@ model ConferencePackage {
   createdAt  DateTime            @default(now())
   updatedAt  DateTime            @updatedAt
 
+  @@index([venueId])
   @@map("conference_packages")
 }
 
@@ -880,6 +1047,8 @@ model ConferenceBooking {
   groupReservation    GroupReservation?        @relation(fields: [groupReservationId], references: [id])
   companyId           String?
   company             CorporateProfile?        @relation(fields: [companyId], references: [id])
+  reservationId       String?
+  reservation         Reservation?              @relation(fields: [reservationId], references: [id])
   venueId             String
   venue               ConferenceVenue          @relation(fields: [venueId], references: [id])
   packageId           String?
@@ -898,6 +1067,7 @@ model ConferenceBooking {
   createdById         String
   createdBy           User                     @relation("ConferenceCreatedBy", fields: [createdById], references: [id])
   resources           ConferenceResourceAllocation[]
+  folioChargeLine     FolioLine?
   createdAt           DateTime                 @default(now())
   updatedAt           DateTime                 @updatedAt
 
@@ -958,6 +1128,9 @@ model StoreLocation {
   isActive        Boolean            @default(true)
   balances        StockBalance[]
   transactions    StockTransaction[]
+  housekeepingSupplyStandards HousekeepingSupplyStandard[]
+  housekeepingSupplyIssueLines HousekeepingSupplyIssueLine[]
+  stockCountAdjustments StockCountAdjustment[]
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
 
@@ -979,6 +1152,9 @@ model InventoryItem {
   isActive           Boolean             @default(true)
   balances           StockBalance[]
   transactions       StockTransaction[]
+  housekeepingSupplyStandards HousekeepingSupplyStandard[]
+  housekeepingSupplyIssueLines HousekeepingSupplyIssueLine[]
+  stockCountAdjustments StockCountAdjustment[]
   recipeComponents   RecipeComponent[]
   requisitionItems   RequisitionItem[]
   workOrderParts     WorkOrderPart[]
@@ -1015,6 +1191,8 @@ model StockTransaction {
   unitCost        Decimal              @db.Decimal(12, 4)
   totalCost       Decimal              @db.Decimal(12, 2)
   referenceDocument String
+  notes           String?
+  adjustmentDelta Decimal?             @db.Decimal(12, 2)
   createdById     String
   createdBy       User                 @relation(fields: [createdById], references: [id])
   createdAt       DateTime             @default(now())
@@ -1022,6 +1200,38 @@ model StockTransaction {
   @@index([itemId])
   @@index([storeLocationId])
   @@map("stock_transactions")
+}
+
+enum StockCountAdjustmentStatus {
+  PENDING_APPROVAL
+  POSTED
+  REJECTED
+}
+
+model StockCountAdjustment {
+  id                 String                     @id @default(cuid())
+  itemId             String
+  item               InventoryItem              @relation(fields: [itemId], references: [id])
+  storeLocationId    String
+  storeLocation      StoreLocation               @relation(fields: [storeLocationId], references: [id])
+  bookQuantity       Decimal                     @db.Decimal(12, 2)
+  countedQuantity    Decimal                     @db.Decimal(12, 2)
+  adjustmentDelta    Decimal                     @db.Decimal(12, 2)
+  varianceValue      Decimal                     @db.Decimal(12, 2)
+  referenceDocument  String
+  reason             String
+  rejectionReason    String?
+  status             StockCountAdjustmentStatus @default(PENDING_APPROVAL)
+  requestedById      String
+  requestedBy        User                        @relation("StockCountRequestedBy", fields: [requestedById], references: [id])
+  approvedById       String?
+  approvedBy         User?                       @relation("StockCountApprovedBy", fields: [approvedById], references: [id])
+  stockTransactionId String?                     @unique
+  createdAt          DateTime                    @default(now())
+  updatedAt          DateTime                    @updatedAt
+
+  @@index([status, createdAt])
+  @@map("stock_count_adjustments")
 }
 
 model RecipeComponent {
@@ -1078,6 +1288,7 @@ model Supplier {
   purchaseOrders   PurchaseOrder[]
   grns             GoodsReceivedNote[]
   invoices         SupplierInvoice[]
+  quotes           SupplierQuote[]
   createdAt        DateTime            @default(now())
   updatedAt        DateTime            @updatedAt
 
@@ -1097,7 +1308,7 @@ model PurchaseRequisition {
   approvedBy        User?             @relation("RequisitionApprover", fields: [approvedById], references: [id])
   notes             String?
   items             RequisitionItem[]
-  purchaseOrders    PurchaseOrder[]
+  purchaseOrder     PurchaseOrder?
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
 
@@ -1124,7 +1335,7 @@ model PurchaseOrder {
   poNumber       String              @unique
   supplierId     String
   supplier       Supplier            @relation(fields: [supplierId], references: [id])
-  requisitionId  String?
+  requisitionId  String?             @unique
   requisition    PurchaseRequisition? @relation(fields: [requisitionId], references: [id])
   status         PurchaseOrderStatus @default(DRAFT)
   subtotal       Decimal             @db.Decimal(12, 2)
@@ -1132,9 +1343,12 @@ model PurchaseOrder {
   totalAmount    Decimal             @db.Decimal(12, 2)
   approvedById   String?
   approvedBy     User?               @relation("POApprovedBy", fields: [approvedById], references: [id])
+  requiredApprovals Int              @default(1)
   createdById    String
   createdBy      User                @relation("POCreatedBy", fields: [createdById], references: [id])
   items          PurchaseOrderItem[]
+  approvals      PurchaseOrderApproval[]
+  supplierQuotes SupplierQuote[]
   grns           GoodsReceivedNote[]
   invoices       SupplierInvoice[]
   createdAt      DateTime            @default(now())
@@ -1143,6 +1357,61 @@ model PurchaseOrder {
   @@index([supplierId])
   @@index([status])
   @@map("purchase_orders")
+}
+
+model PurchaseOrderApproval {
+  id              String        @id @default(cuid())
+  purchaseOrderId String
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  userId          String
+  user            User          @relation(fields: [userId], references: [id])
+  createdAt       DateTime      @default(now())
+
+  @@unique([purchaseOrderId, userId])
+  @@index([purchaseOrderId])
+  @@map("purchase_order_approvals")
+}
+
+model ProcurementApprovalTier {
+  id                 String   @id @default(cuid())
+  minimumTotal       Decimal  @unique @db.Decimal(12, 2)
+  requiredApprovals  Int
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@map("procurement_approval_tiers")
+}
+
+model SupplierQuote {
+  id              String              @id @default(cuid())
+  purchaseOrderId String
+  purchaseOrder   PurchaseOrder       @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  supplierId      String
+  supplier        Supplier            @relation(fields: [supplierId], references: [id])
+  quoteNumber     String
+  quotedAt        DateTime            @default(now())
+  totalAmount     Decimal             @db.Decimal(12, 2)
+  isSelected      Boolean             @default(false)
+  lines           SupplierQuoteLine[]
+  createdAt       DateTime            @default(now())
+
+  @@unique([supplierId, quoteNumber])
+  @@index([purchaseOrderId])
+  @@map("supplier_quotes")
+}
+
+model SupplierQuoteLine {
+  id                  String            @id @default(cuid())
+  quoteId             String
+  quote               SupplierQuote     @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  purchaseOrderItemId String
+  purchaseOrderItem   PurchaseOrderItem @relation(fields: [purchaseOrderItemId], references: [id])
+  quotedQuantity      Decimal           @db.Decimal(12, 2)
+  quotedUnitPrice     Decimal           @db.Decimal(12, 2)
+  lineAmount          Decimal           @db.Decimal(12, 2)
+
+  @@unique([quoteId, purchaseOrderItemId])
+  @@map("supplier_quote_lines")
 }
 
 model PurchaseOrderItem {
@@ -1155,6 +1424,8 @@ model PurchaseOrderItem {
   quantity    Decimal       @db.Decimal(12, 2)
   unitPrice   Decimal       @db.Decimal(12, 2)
   receivedQty Decimal       @default(0) @db.Decimal(12, 2)
+  invoiceLines SupplierInvoiceLine[]
+  quoteLines   SupplierQuoteLine[]
 
   @@index([purchaseOrderId])
   @@map("purchase_order_items")
@@ -1189,11 +1460,29 @@ model SupplierInvoice {
   taxAmount       Decimal               @default(0) @db.Decimal(12, 2)
   totalAmount     Decimal               @db.Decimal(12, 2)
   status          SupplierInvoiceStatus @default(UNPAID)
+  lines           SupplierInvoiceLine[]
   createdAt       DateTime              @default(now())
   updatedAt       DateTime              @updatedAt
 
   @@index([purchaseOrderId])
+  @@unique([supplierId, invoiceNumber])
   @@map("supplier_invoices")
+}
+
+model SupplierInvoiceLine {
+  id                  String             @id @default(cuid())
+  invoiceId           String
+  invoice             SupplierInvoice    @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  purchaseOrderItemId String
+  purchaseOrderItem   PurchaseOrderItem  @relation(fields: [purchaseOrderItemId], references: [id])
+  billedQuantity      Decimal            @db.Decimal(12, 2)
+  billedUnitPrice     Decimal            @db.Decimal(12, 2)
+  lineAmount          Decimal            @db.Decimal(12, 2)
+  quantityVariance    Boolean
+  priceVariance       Boolean
+
+  @@unique([invoiceId, purchaseOrderItemId])
+  @@map("supplier_invoice_lines")
 }
 
 // ─── Module 11: Maintenance & Assets ────────────────────────────────────────
@@ -1232,6 +1521,7 @@ model AssetMaster {
   locationDescription String?
   isActive            Boolean             @default(true)
   tickets             MaintenanceTicket[]
+  preventivePlans     PreventiveMaintenancePlan[]
   createdAt           DateTime            @default(now())
   updatedAt           DateTime            @updatedAt
 
@@ -1250,7 +1540,9 @@ model MaintenanceTicket {
   description    String
   priority       TicketPriority @default(MEDIUM)
   status         TicketStatus   @default(OPEN)
+  roomHoldApplied Boolean       @default(false)
   workOrders     WorkOrder[]
+  preventiveRun  PreventiveMaintenanceRun?
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
@@ -1291,6 +1583,38 @@ model WorkOrderPart {
 
   @@index([workOrderId])
   @@map("work_order_parts")
+}
+
+model PreventiveMaintenancePlan {
+  id                    String   @id @default(cuid())
+  planName              String
+  description           String
+  assetId               String
+  asset                 AssetMaster @relation(fields: [assetId], references: [id])
+  intervalDays          Int
+  nextDueDate           DateTime @db.Date
+  assignedTechnicianId  String?
+  assignedTechnician    User?    @relation(fields: [assignedTechnicianId], references: [id])
+  isActive              Boolean  @default(true)
+  runs                  PreventiveMaintenanceRun[]
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([nextDueDate, isActive])
+  @@map("preventive_maintenance_plans")
+}
+
+model PreventiveMaintenanceRun {
+  id             String                    @id @default(cuid())
+  planId         String
+  plan           PreventiveMaintenancePlan @relation(fields: [planId], references: [id])
+  dueDate        DateTime                  @db.Date
+  ticketId       String                    @unique
+  ticket         MaintenanceTicket         @relation(fields: [ticketId], references: [id])
+  createdAt      DateTime                  @default(now())
+
+  @@unique([planId, dueDate])
+  @@map("preventive_maintenance_runs")
 }
 
 // ─── Module 12: Sales, Marketing & CRM ──────────────────────────────────────
@@ -1408,6 +1732,33 @@ enum CorporateCreditType {
   ADJUSTMENT
 }
 
+enum CorporateInvoiceStatus {
+  UNPAID
+  PARTIAL
+  PAID
+}
+
+model CorporateInvoice {
+  id                 String                  @id @default(cuid())
+  invoiceNumber      String                  @unique
+  companyId          String
+  company            CorporateProfile        @relation(fields: [companyId], references: [id])
+  reservationId      String?
+  reservation        Reservation?            @relation(fields: [reservationId], references: [id])
+  amount             Decimal                 @db.Decimal(12, 2)
+  outstanding        Decimal                 @db.Decimal(12, 2)
+  issueDate          DateTime                @default(now()) @db.Date
+  dueDate            DateTime                @db.Date
+  referenceDetails   String?
+  status             CorporateInvoiceStatus @default(UNPAID)
+  creditTransactions CorporateCreditTransaction[]
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
+
+  @@index([companyId, dueDate])
+  @@map("corporate_invoices")
+}
+
 model NegotiatedRateContract {
   id             String           @id @default(cuid())
   companyId      String
@@ -1429,6 +1780,8 @@ model CorporateCreditTransaction {
   id               String              @id @default(cuid())
   companyId        String
   company          CorporateProfile    @relation(fields: [companyId], references: [id])
+  invoiceId        String?
+  invoice          CorporateInvoice?   @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
   transactionType  CorporateCreditType
   amount           Decimal             @db.Decimal(12, 2)
   balanceAfter     Decimal             @db.Decimal(12, 2)
@@ -1512,6 +1865,11 @@ enum GuestServiceStatus {
   CANCELLED
 }
 
+enum GuestServicePriority {
+  NORMAL
+  HIGH
+}
+
 enum LaundryServiceOption {
   WASH_AND_FOLD
   IRON
@@ -1549,11 +1907,14 @@ model GuestServiceOrder {
   catalogItemId       String?
   catalogItem         ServiceCatalogItem? @relation(fields: [catalogItemId], references: [id])
   serviceType         GuestServiceType
+  priority            GuestServicePriority @default(NORMAL)
   runnerUserId        String?
   runner              User?              @relation("ServiceRunner", fields: [runnerUserId], references: [id])
   createdById         String
   createdBy           User               @relation("ServiceCreatedBy", fields: [createdById], references: [id])
   status              GuestServiceStatus @default(RECEIVED)
+  posOrderId          String?            @unique
+  posOrder            PosOrder?           @relation(fields: [posOrderId], references: [id])
   totalCharge         Decimal            @default(0) @db.Decimal(10, 2)
   specialInstructions String?
   laundryItems        LaundryItemLine[]

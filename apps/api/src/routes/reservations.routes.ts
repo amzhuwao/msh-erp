@@ -22,6 +22,7 @@ const availabilityQuerySchema = z.object({
   checkIn: z.string(),
   checkOut: z.string(),
   adults: z.coerce.number().int().min(1).default(1),
+  companyId: z.string().optional(),
 });
 
 const createReservationSchema = z.object({
@@ -33,6 +34,7 @@ const createReservationSchema = z.object({
   adults: z.number().int().min(1).default(1),
   children: z.number().int().min(0).default(0),
   specialRequests: z.string().optional(),
+  companyId: z.string().optional(),
   source: z.enum(["WALK_IN", "PHONE", "ONLINE", "OTA", "AGENT", "GROUP"]).optional(),
 });
 
@@ -62,7 +64,7 @@ reservationsRouter.get(
     const query = validateQuery(availabilityQuerySchema, req);
     const checkIn = new Date(query.checkIn);
     const checkOut = new Date(query.checkOut);
-    const results = await searchAvailability(checkIn, checkOut, query.adults);
+    const results = await searchAvailability(checkIn, checkOut, query.adults, query.companyId);
     res.json({ checkIn: query.checkIn, checkOut: query.checkOut, results });
   }),
 );

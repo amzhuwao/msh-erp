@@ -31,7 +31,7 @@ export async function checkRoomOverlap(
   }
 }
 
-export async function searchAvailability(checkIn: Date, checkOut: Date, adults = 1) {
+export async function searchAvailability(checkIn: Date, checkOut: Date, adults = 1, companyId?: string) {
   if (checkIn >= checkOut) {
     throw new AppError(400, "RES-002", "Check-in date must be before check-out date");
   }
@@ -47,6 +47,16 @@ export async function searchAvailability(checkIn: Date, checkOut: Date, adults =
       ratePlans: { where: { isActive: true }, take: 1 },
     },
   });
+
+  const contracts = companyId ? await (async () => {
+    const company = await prisma.corporateProfile.findUnique({ where: { id: companyId } });
+    if (!company?.isActive) throw new AppError(400, "COR-002", "Corporate client is inactive or not found");
+    if (!company.isCreditApproved) throw new AppError(400, "COR-003", "Corporate credit has not been approved");
+    return prisma.negotiatedRateContract.findMany({
+      where: { companyId, isActive: true, startDate: { lte: toDateOnly(checkIn) }, endDate: { gte: toDateOnly(checkOut) } },
+    });
+  })() : [];
+  const contractByRoomType = new Map(contracts.map((contract) => [contract.roomTypeId, contract]));
 
   const overlapping = await prisma.reservation.findMany({
     where: {
@@ -73,6 +83,7 @@ export async function searchAvailability(checkIn: Date, checkOut: Date, adults =
         availableCount: availableRooms.length,
         ratePlanId: rt.ratePlans[0]!.id,
         nightlyRate: rt.ratePlans[0]!.baseRate,
+        contractedRate: contractByRoomType.has(rt.id) ? contractByRoomType.get(rt.id)!.contractedRate : null,
         sampleRoomIds: availableRooms.slice(0, 5).map((r) => r.id),
       };
     })
@@ -89,6 +100,7 @@ export async function createReservation(input: {
   children: number;
   specialRequests?: string;
   guestPaymentMethod?: string;
+  companyId?: string;
   source?: BookingSource;
   createdById: string;
   ipAddress?: string;
@@ -114,8 +126,28 @@ export async function createReservation(input: {
     throw new AppError(404, "RES-003", "Rate plan not found");
   }
 
-  if (input.adults > ratePlan.roomType.maxAdults) {
-    throw new AppError(400, "RES-004", "Adult count exceeds room type capacity");
+  if (input.adults > ratePlan.roomType.maxAdults || input.children > ratePlan.roomType.maxChildren) {
+    throw new AppError(400, "RES-004", "Guest count exceeds room type capacity");
+  }
+
+  let contractedRate: number | undefined;
+  let corporateBillingDepartments: string[] = [];
+  if (input.companyId) {
+    const company = await prisma.corporateProfile.findUnique({ where: { id: input.companyId } });
+    if (!company?.isActive) throw new AppError(400, "COR-002", "Corporate client is inactive or not found");
+    if (!company.isCreditApproved) throw new AppError(400, "COR-003", "Corporate credit has not been approved");
+    corporateBillingDepartments = company.corporatePaidDepartments;
+    const corporateContract = await prisma.negotiatedRateContract.findFirst({
+      where: {
+        companyId: company.id,
+        roomTypeId: ratePlan.roomTypeId,
+        isActive: true,
+        startDate: { lte: checkIn },
+        endDate: { gte: checkOut },
+      },
+      select: { contractedRate: true },
+    });
+    if (corporateContract) contractedRate = Number(corporateContract.contractedRate);
   }
 
   if (input.roomId) {
@@ -144,6 +176,9 @@ export async function createReservation(input: {
         guestPaymentMethod: input.guestPaymentMethod,
         status: ReservationStatus.CONFIRMED,
         source,
+        corporateCompanyId: input.companyId,
+        contractedRate,
+        corporateBillingDepartments,
         createdById: input.createdById,
       },
       include: {
@@ -229,9 +264,20 @@ export async function checkInReservation(input: {
     passportNumber: input.passportNumber || reservation.guest.passportNumber,
   });
 
-  const room = await prisma.room.findUnique({ where: { id: input.roomId } });
+  const room = await prisma.room.findUnique({
+    where: { id: input.roomId },
+    include: { roomType: true },
+  });
   if (!room) {
     throw new AppError(404, "RES-008", "Room not found");
+  }
+
+  const ratePlan = await prisma.ratePlan.findUnique({ where: { id: reservation.ratePlanId } });
+  if (!ratePlan || room.roomTypeId !== ratePlan.roomTypeId) {
+    throw new AppError(400, "RES-005", "Selected room does not match the reservation room type");
+  }
+  if (reservation.adults > room.roomType.maxAdults || reservation.children > room.roomType.maxChildren) {
+    throw new AppError(400, "RES-004", "Guest count exceeds room capacity");
   }
 
   if (room.status !== RoomStatus.INSPECTED) {

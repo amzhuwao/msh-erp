@@ -3,12 +3,13 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { clearToken, getStoredUser } from "@/lib/api";
+import { clearToken, getStoredUser, type AuthUser } from "@/lib/api";
 import { useEffect, useState } from "react";
 
 const nav = [
   { href: "/dashboard", label: "Front Office", icon: "🏨" },
   { href: "/dashboard/groups", label: "Groups", icon: "👥" },
+  { href: "/dashboard/guests", label: "Guest Profiles", icon: "🪪" },
   { href: "/dashboard/housekeeping", label: "Housekeeping", icon: "🛏️" },
   { href: "/dashboard/pos", label: "Restaurant POS", icon: "🍽️" },
   { href: "/dashboard/conference", label: "Conference", icon: "🎤" },
@@ -32,11 +33,13 @@ const nav = [
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [user, setUser] = useState(getStoredUser());
+  const [user, setUser] = useState<AuthUser | null>(null);
 
   useEffect(() => {
-    if (!user) router.replace("/login");
-  }, [user, router]);
+    const storedUser = getStoredUser();
+    if (storedUser) setUser(storedUser);
+    else router.replace("/login");
+  }, [router]);
 
   if (!user) return null;
 

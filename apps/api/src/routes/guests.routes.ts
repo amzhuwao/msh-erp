@@ -14,24 +14,61 @@ export const guestsRouter = Router();
 guestsRouter.use(authenticate);
 
 const guestBodySchema = z.object({
-  firstName: z.string().min(1),
-  lastName: z.string().min(1),
-  email: z.string().email(),
-  phone: z.string().optional(),
-  nationality: z.string().min(2, "Nationality is required"),
-  nationalId: z.string().optional(),
-  passportNumber: z.string().optional(),
+  firstName: z.string().trim().min(1),
+  lastName: z.string().trim().min(1),
+  email: z.string().trim().email(),
+  phone: z.string().nullable().optional(),
+  nationality: z.string().trim().min(2, "Nationality is required"),
+  nationalId: z.string().nullable().optional(),
+  passportNumber: z.string().nullable().optional(),
+  gender: z.string().nullable().optional(),
+  companyName: z.string().nullable().optional(),
+  address: z.string().nullable().optional(),
+  carRegistration: z.string().nullable().optional(),
+  nextOfKin: z.string().nullable().optional(),
   vipStatus: z.nativeEnum(VipStatus).optional(),
-  notes: z.string().optional(),
-}).superRefine((data, ctx) => {
-  if (!data.nationalId?.trim() && !data.passportNumber?.trim()) {
-    ctx.addIssue({
-      code: "custom",
-      message: "National ID or passport number is required",
-      path: ["nationalId"],
-    });
-  }
+  notes: z.string().nullable().optional(),
 });
+
+const guestSelect = {
+  id: true,
+  firstName: true,
+  lastName: true,
+  email: true,
+  phone: true,
+  nationality: true,
+  nationalId: true,
+  passportNumber: true,
+  gender: true,
+  companyName: true,
+  address: true,
+  carRegistration: true,
+  nextOfKin: true,
+  vipStatus: true,
+  notes: true,
+  createdAt: true,
+  updatedAt: true,
+  _count: { select: { reservations: true } },
+} as const;
+
+function normalizedGuestData(data: z.infer<typeof guestBodySchema>) {
+  return {
+    ...data,
+    firstName: data.firstName.trim(),
+    lastName: data.lastName.trim(),
+    email: data.email.trim().toLowerCase(),
+    phone: data.phone?.trim() || null,
+    nationality: data.nationality.trim(),
+    nationalId: data.nationalId?.trim() || null,
+    passportNumber: data.passportNumber?.trim() || null,
+    gender: data.gender?.trim() || null,
+    companyName: data.companyName?.trim() || null,
+    address: data.address?.trim() || null,
+    carRegistration: data.carRegistration?.trim() || null,
+    nextOfKin: data.nextOfKin?.trim() || null,
+    notes: data.notes?.trim() || null,
+  };
+}
 
 const listQuerySchema = z.object({
   search: z.string().optional(),
@@ -61,6 +98,7 @@ guestsRouter.get(
         orderBy: { createdAt: "desc" },
         skip: (query.page - 1) * query.limit,
         take: query.limit,
+        select: guestSelect,
       }),
       prisma.guest.count({ where }),
     ]);
@@ -75,11 +113,19 @@ guestsRouter.get(
   asyncHandler(async (req, res) => {
     const guest = await prisma.guest.findUnique({
       where: { id: paramId(req.params.id) },
-      include: {
+      select: {
+        ...guestSelect,
         reservations: {
           orderBy: { checkInDate: "desc" },
           take: 10,
-          include: { room: true, ratePlan: true },
+          select: {
+            id: true,
+            reservationNumber: true,
+            status: true,
+            checkInDate: true,
+            checkOutDate: true,
+            room: { select: { number: true } },
+          },
         },
       },
     });
@@ -98,7 +144,7 @@ guestsRouter.post(
   asyncHandler(async (req, res) => {
     const body = validateBody(guestBodySchema, req);
     assertGuestIdentity(body);
-    const guest = await prisma.guest.create({ data: body });
+    const guest = await prisma.guest.create({ data: normalizedGuestData(body), select: guestSelect });
 
     await writeAuditLog({
       userId: req.user!.id,
@@ -113,23 +159,73 @@ guestsRouter.post(
   }),
 );
 
+guestsRouter.post(
+  "/bulk",
+  authorize("Reservations", "CREATE"),
+  asyncHandler(async (req, res) => {
+    const entries = req.body?.guests;
+    if (!Array.isArray(entries) || entries.length === 0 || entries.length > 500) {
+      throw new AppError(400, "GST-004", "Provide between 1 and 500 guest profiles");
+    }
+
+    const results: { row: number; status: "created" | "error"; id?: string; message?: string }[] = [];
+    for (const [index, entry] of entries.entries()) {
+      const parsed = guestBodySchema.safeParse(entry);
+      if (!parsed.success) {
+        results.push({ row: index + 2, status: "error", message: parsed.error.issues[0]?.message ?? "Invalid guest profile" });
+        continue;
+      }
+      try {
+        assertGuestIdentity(parsed.data);
+        const guest = await prisma.guest.create({ data: normalizedGuestData(parsed.data), select: { id: true } });
+        await writeAuditLog({
+          userId: req.user!.id,
+          module: "Reservations",
+          action: "GUEST_CREATE",
+          entityType: "Guest",
+          entityId: guest.id,
+          ipAddress: getClientIp(req),
+        });
+        results.push({ row: index + 2, status: "created", id: guest.id });
+      } catch (error) {
+        if (error instanceof AppError) {
+          results.push({ row: index + 2, status: "error", message: error.message });
+        } else if (typeof error === "object" && error !== null && "code" in error && error.code === "P2002") {
+          results.push({ row: index + 2, status: "error", message: "Email already exists" });
+        } else {
+          throw error;
+        }
+      }
+    }
+
+    res.status(201).json({
+      created: results.filter((result) => result.status === "created").length,
+      failed: results.filter((result) => result.status === "error").length,
+      results,
+    });
+  }),
+);
+
 guestsRouter.put(
   "/:id",
   authorize("Reservations", "EDIT"),
   asyncHandler(async (req, res) => {
     const body = validateBody(guestBodySchema.partial(), req);
-    if (body.nationality !== undefined || body.nationalId !== undefined || body.passportNumber !== undefined) {
-      const existing = await prisma.guest.findUnique({ where: { id: paramId(req.params.id) } });
-      if (!existing) throw new AppError(404, "GST-001", "Guest not found");
-      assertGuestIdentity({
-        nationality: body.nationality ?? existing.nationality,
-        nationalId: body.nationalId ?? existing.nationalId,
-        passportNumber: body.passportNumber ?? existing.passportNumber,
-      });
-    }
+    const existing = await prisma.guest.findUnique({ where: { id: paramId(req.params.id) } });
+    if (!existing) throw new AppError(404, "GST-001", "Guest not found");
+    assertGuestIdentity({
+      nationality: body.nationality ?? existing.nationality,
+      nationalId: body.nationalId === undefined ? existing.nationalId : body.nationalId,
+      passportNumber: body.passportNumber === undefined ? existing.passportNumber : body.passportNumber,
+    });
+    const data = Object.fromEntries(Object.entries(body).map(([key, value]) => [
+      key,
+      typeof value === "string" ? (key === "email" ? value.trim().toLowerCase() : value.trim() || null) : value,
+    ]));
     const guest = await prisma.guest.update({
       where: { id: paramId(req.params.id) },
-      data: body,
+      data,
+      select: guestSelect,
     });
 
     await writeAuditLog({

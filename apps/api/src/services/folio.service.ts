@@ -4,6 +4,7 @@ import { AppError } from "../lib/errors.js";
 import { nextDocumentNumber, writeAuditLog } from "./system.service.js";
 import { getProperty, paymentInstructions } from "../lib/property.js";
 import { taxFieldsForCharge, type ChargeDepartment } from "../lib/tax.js";
+import { postCorporateInvoiceChargeWithinTransaction } from "./corporate.service.js";
 
 export function calculateFolioBalance(
   lines: { lineType: FolioLineType; amount: { toString(): string } }[],
@@ -28,7 +29,7 @@ export async function getFolioWithBalance(folioId: string) {
           room: { include: { roomType: true } },
           ratePlan: { include: { roomType: true } },
           guestServiceOrders: { include: { catalogItem: true } },
-          posOrders: { include: { items: { include: { menuItem: true } }, outlet: true } },
+          posOrders: { where: { guestServiceOrder: null }, include: { items: { include: { menuItem: true } }, outlet: true } },
         },
       },
     },
@@ -162,6 +163,8 @@ export async function checkOutReservation(input: {
     include: {
       folios: { include: { lines: true } },
       room: true,
+      corporateCompany: true,
+      corporateInvoices: { orderBy: { createdAt: "desc" }, take: 1, select: { createdAt: true } },
     },
   });
 
@@ -176,14 +179,67 @@ export async function checkOutReservation(input: {
     (sum, folio) => sum + calculateFolioBalance(folio.lines),
     0,
   );
+  const latestCorporateInvoice = reservation.corporateInvoices[0]?.createdAt;
+  const newFolioLines = reservation.folios.flatMap((folio) => folio.lines)
+    .filter((line) => !latestCorporateInvoice || line.createdAt > latestCorporateInvoice);
+  const companyPaidDepartments = new Set(
+    reservation.corporateBillingDepartments.length ? reservation.corporateBillingDepartments : ["ROOMS"],
+  );
+  const companyCharges = newFolioLines.reduce((sum, line) => {
+    if (!companyPaidDepartments.has(line.department ?? "") || line.lineType === FolioLineType.PAYMENT) return sum;
+    return sum + Number(line.amount);
+  }, 0);
+  const otherCharges = newFolioLines.reduce((sum, line) => {
+    if (line.lineType === FolioLineType.PAYMENT || companyPaidDepartments.has(line.department ?? "")) return sum;
+    return sum + Number(line.amount);
+  }, 0);
+  const guestPayments = newFolioLines
+    .filter((line) => line.lineType === FolioLineType.PAYMENT && line.paymentMethod !== "CORPORATE")
+    .reduce((sum, line) => sum + Number(line.amount), 0);
+  const companyInvoiceBalance = reservation.corporateCompany
+    ? Math.max(0, companyCharges - Math.max(0, guestPayments - otherCharges))
+    : 0;
+  const balanceAfterCompanyRouting = totalBalance - companyInvoiceBalance;
 
-  if (Math.abs(totalBalance) > 0.01) {
+  if (Math.abs(balanceAfterCompanyRouting) > 0.01) {
     throw new AppError(400, "RES-013", "Folio must be settled before check-out", {
-      balance: totalBalance,
+      balance: balanceAfterCompanyRouting,
+      companyInvoiceBalance,
     });
   }
 
-  const updated = await prisma.$transaction(async (tx) => {
+  const invoiceNumber = companyInvoiceBalance > 0.01 ? `COR-${await nextDocumentNumber("INVOICES")}` : undefined;
+
+  const checkout = await prisma.$transaction(async (tx) => {
+    let corporateInvoice: { id: string; invoiceNumber: string } | null = null;
+    if (companyInvoiceBalance > 0.01 && invoiceNumber && reservation.corporateCompanyId) {
+      const charge = await postCorporateInvoiceChargeWithinTransaction(tx, {
+        companyId: reservation.corporateCompanyId,
+        amount: companyInvoiceBalance,
+        referenceDetails: `Corporate-routed folio charges for reservation ${reservation.reservationNumber}`,
+        userId: input.userId,
+        invoiceNumber,
+        reservationId: reservation.id,
+      });
+      corporateInvoice = charge.invoice;
+      for (const folio of reservation.folios) {
+        await tx.folioLine.create({
+          data: {
+            folioId: folio.id,
+            lineType: FolioLineType.PAYMENT,
+            description: `Folio charges billed to corporate account — ${charge.invoice.invoiceNumber}`,
+            amount: companyInvoiceBalance,
+            department: "OTHER",
+            taxRate: 0,
+            netAmount: 0,
+            vatAmount: 0,
+            levyAmount: 0,
+            paymentMethod: "CORPORATE",
+            postedById: input.userId,
+          },
+        });
+      }
+    }
     const result = await tx.reservation.update({
       where: { id: reservation.id },
       data: { status: ReservationStatus.CHECKED_OUT },
@@ -204,6 +260,11 @@ export async function checkOutReservation(input: {
       });
     }
 
+    await tx.groupGuest.updateMany({
+      where: { reservationId: reservation.id },
+      data: { checkInStatus: "CHECKED_OUT" },
+    });
+
     await tx.reservationStatusHistory.create({
       data: {
         reservationId: reservation.id,
@@ -214,7 +275,7 @@ export async function checkOutReservation(input: {
       },
     });
 
-    return result;
+    return { result, corporateInvoice };
   });
 
   await writeAuditLog({
@@ -226,7 +287,19 @@ export async function checkOutReservation(input: {
     ipAddress: input.ipAddress,
   });
 
-  return updated;
+  if (checkout.corporateInvoice) {
+    await writeAuditLog({
+      userId: input.userId,
+      module: "Corporate",
+      action: "CORPORATE_CHECKOUT_INVOICE",
+      entityType: "CorporateInvoice",
+      entityId: checkout.corporateInvoice.id,
+      details: { invoiceNumber: checkout.corporateInvoice.invoiceNumber, reservationNumber: reservation.reservationNumber, amount: companyInvoiceBalance },
+      ipAddress: input.ipAddress,
+    });
+  }
+
+  return checkout.result;
 }
 
 export async function runNightAudit(userId: string, ipAddress?: string) {
@@ -285,7 +358,7 @@ export async function runNightAudit(userId: string, ipAddress?: string) {
       const folio = reservation.folios[0];
       if (!folio) continue;
 
-      const nightlyRate = Number(reservation.ratePlan.baseRate);
+      const nightlyRate = Number(reservation.contractedRate ?? reservation.ratePlan.baseRate);
       const tax = taxFieldsForCharge({ amount: nightlyRate, department: "ROOMS" });
       await tx.folioLine.create({
         data: {
@@ -436,4 +509,3 @@ export async function buildFolioDocument(folioId: string, type: "invoice" | "rec
     paymentInstructions: paymentInstructions(property),
   };
 }
-

@@ -52,6 +52,11 @@ const adminPermissions = Object.fromEntries(allModules.map((m) => [m, allActions
 async function main() {
   console.log("Seeding Manica Skyview Hotel ERP...");
 
+  await prisma.housekeepingSupplyIssueLine.deleteMany();
+  await prisma.housekeepingSupplyIssue.deleteMany();
+  await prisma.housekeepingSupplyStandard.deleteMany();
+  await prisma.roomCleanLog.deleteMany();
+  await prisma.lostAndFound.deleteMany();
   await prisma.housekeepingAssignment.deleteMany();
   await prisma.conferenceResourceAllocation.deleteMany();
   await prisma.conferenceBooking.deleteMany();
@@ -214,6 +219,9 @@ async function main() {
     data: { module: DocumentModule.GUEST_SERVICES, prefix: "GSO-2026-", currentSequence: 1, paddingDigits: 4 },
   });
   await prisma.documentNumberingPattern.create({
+    data: { module: DocumentModule.HOUSEKEEPING_ISSUES, prefix: "HK-ISS-2026-", currentSequence: 1, paddingDigits: 4 },
+  });
+  await prisma.documentNumberingPattern.create({
     data: { module: DocumentModule.INVOICES, prefix: "MSV-INV-2026-", currentSequence: 1, paddingDigits: 5 },
   });
   await prisma.documentNumberingPattern.create({
@@ -346,6 +354,18 @@ async function main() {
       }
     }
   }
+
+  await prisma.guest.create({
+    data: {
+      firstName: "Development",
+      lastName: "Guest",
+      email: "development.guest@example.test",
+      phone: "+263000000000",
+      nationality: "Zimbabwe",
+      nationalId: "DEV-LOCAL-001",
+      notes: "Local development sample record; not a real guest.",
+    },
+  });
 
   await prisma.user.create({
     data: {
@@ -597,6 +617,7 @@ async function main() {
   const confPkg = await prisma.conferencePackage.create({
     data: {
       name: "Full Day Conference Package",
+      venueId: ballroom.id,
       ratePerPax: 28,
       details: { breakfast: true, teas: true, lunch: true },
     },

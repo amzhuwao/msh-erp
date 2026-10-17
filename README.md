@@ -77,14 +77,29 @@ GET  /api/corporate/profiles
 
 ## Development
 
-Specs for all 20 modules: `erp-dev-plan/`
+See [`DEVELOPMENT_PLAN.md`](DEVELOPMENT_PLAN.md) for the local development milestones and workflow priorities. Specs for all 20 modules are in `erp-dev-plan/`.
+
+Prerequisites: Node.js 20 or newer, npm, and Docker Engine with the Docker Compose plugin. Run these commands from the repository root as your normal user (no `sudo` required). The bundled PostgreSQL service listens on `127.0.0.1:55432`; if you use a separately managed local PostgreSQL cluster, set `DATABASE_URL` in `apps/api/.env` to that cluster instead.
 
 ```bash
+npm ci
 cp .env.example apps/api/.env
-npm install
-npm run db:generate && npm run db:push && npm run db:seed
+cp apps/web/.env.local.example apps/web/.env.local
+docker compose up -d postgres
+npm run db:setup
 npm run dev          # API on :3000
 npm run dev:web      # Web on :3004
+```
+
+Open `http://localhost:3004/login` and sign in with `admin` / `Admin@MSH2026!`.
+The seed includes a local sample guest (`Development Guest`) and inspected rooms/rates. In the Front Office dashboard, register another guest if needed, use **New Reservation** to search and book, then check the guest in from **Arrivals**. Open the guest's folio from **In-House** to post a charge and payment, then check out after the balance reaches zero.
+
+`npm run db:setup` generates the Prisma client, pushes the schema, and runs the sample-data seed. **The seed deletes and recreates application data. Use it only with a disposable local database; never point it at staging or production.**
+
+For normal development, run the API and web with the commands above so both support hot reload. To run the API in Docker instead, first complete the database setup above, then use `docker compose up -d api`; run the web app separately with `npm run dev:web`.
+
+```bash
+npm run db:studio    # Prisma Studio
 ```
 
 ## Project structure

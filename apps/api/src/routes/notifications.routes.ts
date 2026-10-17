@@ -45,7 +45,7 @@ notificationsRouter.post("/send-direct", authorize("Notifications", "CREATE"), a
     guestId: z.string().optional(),
     transactional: z.boolean().optional(),
   }), req);
-  res.status(201).json(await sendDirect(body));
+  res.status(201).json(await sendDirect({ ...body, userId: req.user!.id }));
 }));
 
 notificationsRouter.post("/:id/retry", authorize("Notifications", "EDIT"), asyncHandler(async (req, res) => {

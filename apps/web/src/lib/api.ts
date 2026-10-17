@@ -1,5 +1,5 @@
 const API_BASE =
-  process.env.NEXT_PUBLIC_API_URL ?? "https://209.38.225.150/msh-erp";
+  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3000";
 
 export interface AuthUser {
   id: string;
