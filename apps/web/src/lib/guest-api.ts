@@ -16,6 +16,7 @@ export interface GuestProfile {
   address: string | null;
   carRegistration: string | null;
   nextOfKin: string | null;
+  nextOfKinPhone: string | null;
 }
 
 const TOKEN_KEY = "msh_guest_token";

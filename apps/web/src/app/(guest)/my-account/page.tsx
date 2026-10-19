@@ -41,6 +41,7 @@ function AccountBody() {
           address: form.address,
           carRegistration: form.carRegistration,
           nextOfKin: form.nextOfKin,
+          nextOfKinPhone: form.nextOfKinPhone,
           idPassport: form.idPassport,
         }),
       });
@@ -125,6 +126,7 @@ function AccountBody() {
                 <div className="grid grid-cols-2 gap-3">
                   <Field label="Car Registration" value={form.carRegistration || ""} onChange={(v) => set("carRegistration", v)} />
                   <Field label="Next of Kin" value={form.nextOfKin || ""} onChange={(v) => set("nextOfKin", v)} />
+                  <Field label="Next-of-kin contact number" value={form.nextOfKinPhone || ""} onChange={(v) => set("nextOfKinPhone", v)} />
                 </div>
                 <Field label="Address" value={form.address || ""} onChange={(v) => set("address", v)} />
               </div>
@@ -136,6 +138,8 @@ function AccountBody() {
                 <Item label="Country" value={guest.nationality || "—"} />
                 <Item label="ID / Passport" value={guest.idPassport || "—"} />
                 <Item label="Company" value={guest.companyName || "—"} />
+                <Item label="Next of kin" value={guest.nextOfKin || "—"} />
+                <Item label="Next-of-kin contact number" value={guest.nextOfKinPhone || "—"} />
               </dl>
             )}
           </div>

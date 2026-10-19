@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
 import { PageHeader } from "@/components/ui/PageHeader";
 
-type VipStatus = "NONE" | "VIP1" | "VIP2" | "VIP3";
 type GuestInput = {
   firstName: string;
   lastName: string;
@@ -18,10 +17,10 @@ type GuestInput = {
   address: string;
   carRegistration: string;
   nextOfKin: string;
-  vipStatus: VipStatus;
+  nextOfKinPhone: string;
   notes: string;
 };
-type Guest = GuestInput & {
+type Guest = Omit<GuestInput, "email"> & { email: string | null } & {
   id: string;
   createdAt: string;
   updatedAt: string;
@@ -44,11 +43,11 @@ type ImportResult = {
 const emptyGuest: GuestInput = {
   firstName: "", lastName: "", email: "", phone: "", nationality: "",
   nationalId: "", passportNumber: "", gender: "", companyName: "", address: "",
-  carRegistration: "", nextOfKin: "", vipStatus: "NONE", notes: "",
+  carRegistration: "", nextOfKin: "", nextOfKinPhone: "", notes: "",
 };
 const csvColumns = [
   "firstName", "lastName", "email", "phone", "nationality", "nationalId", "passportNumber",
-  "gender", "companyName", "address", "carRegistration", "nextOfKin", "vipStatus", "notes",
+  "gender", "companyName", "address", "carRegistration", "nextOfKin", "nextOfKinPhone", "notes",
 ] as const;
 const csvAliases: Record<string, keyof GuestInput> = Object.fromEntries(
   csvColumns.map((column) => [column.toLowerCase(), column]),
@@ -85,7 +84,7 @@ function csvGuestRows(text: string): GuestInput[] {
   const rows = parseCsv(text);
   if (rows.length < 2) throw new Error("Add a header row and at least one guest profile.");
   const headers = rows[0]!.map((header) => csvAliases[header.toLowerCase().replace(/[\s_-]/g, "")] ?? null);
-  for (const required of ["firstName", "lastName", "email", "nationality"] as const) {
+  for (const required of ["firstName", "lastName", "nationality"] as const) {
     if (!headers.includes(required)) throw new Error(`CSV is missing the required “${required}” column.`);
   }
   if (!headers.includes("nationalId") && !headers.includes("passportNumber")) {
@@ -97,20 +96,16 @@ function csvGuestRows(text: string): GuestInput[] {
     headers.forEach((column, index) => {
       if (!column) return;
       const value = cells[index] ?? "";
-      if (column === "vipStatus") {
-        const status = value.toUpperCase();
-        if (status && !["NONE", "VIP1", "VIP2", "VIP3"].includes(status)) {
-          throw new Error(`CSV row ${rowIndex + 2} has an invalid vipStatus. Use NONE, VIP1, VIP2, or VIP3.`);
-        }
-        guest.vipStatus = (status || "NONE") as VipStatus;
-      } else guest[column] = value;
+      guest[column] = value;
     });
     return guest;
   });
 }
 
 function downloadCsvTemplate() {
-  const csv = `${csvColumns.join(",")}\r\n,,,,Zimbabwe,NationalID123,,,,,,,NONE,`;
+  const sampleValues: Record<string, string> = { nationality: "Zimbabwe", nationalId: "NationalID123" };
+  const sample = csvColumns.map((column) => sampleValues[column] ?? "");
+  const csv = `${csvColumns.join(",")}\r\n${sample.join(",")}`;
   const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
   const link = document.createElement("a");
   link.href = url; link.download = "guest-profiles-template.csv"; link.click();
@@ -178,8 +173,7 @@ export default function GuestsPage() {
     setSelectedGuest(null); setEditing(guest);
     const values = { ...emptyGuest } as GuestInput;
     for (const column of csvColumns) {
-      if (column === "vipStatus") values.vipStatus = guest.vipStatus ?? "NONE";
-      else values[column] = guest[column] ?? "";
+      values[column] = guest[column] ?? "";
     }
     setForm(values); setError(""); setMessage("");
   }
@@ -195,7 +189,9 @@ export default function GuestsPage() {
       companyName: form.companyName || null,
       address: form.address || null,
       carRegistration: form.carRegistration || null,
+      email: form.email?.trim() || null,
       nextOfKin: form.nextOfKin || null,
+      nextOfKinPhone: form.nextOfKinPhone || null,
       notes: form.notes || null,
     };
     try {
@@ -230,7 +226,9 @@ export default function GuestsPage() {
           companyName: guest.companyName || null,
           address: guest.address || null,
           carRegistration: guest.carRegistration || null,
+          email: guest.email?.trim() || null,
           nextOfKin: guest.nextOfKin || null,
+          nextOfKinPhone: guest.nextOfKinPhone || null,
           notes: guest.notes || null,
         })) }),
       });
@@ -254,7 +252,7 @@ export default function GuestsPage() {
 
     <section className="msh-card p-4 space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div><h2 className="font-semibold">Bulk guest profile creation</h2><p className="text-sm text-[hsl(var(--muted-foreground))]">CSV columns: firstName, lastName, email, nationality, and a nationalId or passportNumber. Other profile fields are optional.</p></div>
+        <div><h2 className="font-semibold">Bulk guest profile creation</h2><p className="text-sm text-[hsl(var(--muted-foreground))]">CSV columns: firstName, lastName, nationality, and a nationalId or passportNumber. Email and other profile fields are optional.</p></div>
         <button type="button" className="msh-btn msh-btn-outline" onClick={downloadCsvTemplate}>Download CSV template</button>
       </div>
       <div className="flex flex-wrap items-center gap-3">
@@ -278,7 +276,7 @@ export default function GuestsPage() {
         ["Email", selectedGuest.email], ["Phone", selectedGuest.phone], ["Nationality", selectedGuest.nationality],
         ["National ID", selectedGuest.nationalId], ["Passport", selectedGuest.passportNumber], ["Gender", selectedGuest.gender],
         ["Company", selectedGuest.companyName], ["Address", selectedGuest.address], ["Vehicle registration", selectedGuest.carRegistration],
-        ["Next of kin", selectedGuest.nextOfKin], ["VIP", selectedGuest.vipStatus], ["Notes", selectedGuest.notes],
+        ["Next of kin", selectedGuest.nextOfKin], ["Next-of-kin contact number", selectedGuest.nextOfKinPhone], ["Notes", selectedGuest.notes],
       ] as [string, string | null][]).map(([label, value]) => <div key={label}><dt className="text-xs uppercase tracking-wide text-slate-500">{label}</dt><dd className="mt-1">{value || "—"}</dd></div>)}</dl>
       <div><h3 className="font-semibold text-sm mb-2">Recent reservations</h3>{selectedGuest.reservations?.length ? <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="text-left"><th className="p-2">Reservation</th><th className="p-2">Dates</th><th className="p-2">Room</th><th className="p-2">Status</th></tr></thead><tbody>{selectedGuest.reservations.map((reservation) => <tr key={reservation.id} className="border-t"><td className="p-2">{reservation.reservationNumber}</td><td className="p-2">{displayDate(reservation.checkInDate)} – {displayDate(reservation.checkOutDate)}</td><td className="p-2">{reservation.room?.number ?? "—"}</td><td className="p-2">{reservation.status}</td></tr>)}</tbody></table></div> : <p className="text-sm text-slate-500">No reservations found.</p>}</div>
     </section>}
@@ -289,7 +287,7 @@ export default function GuestsPage() {
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <ProfileField label="First name" required value={form.firstName} onChange={(value) => setField("firstName", value)} />
           <ProfileField label="Last name" required value={form.lastName} onChange={(value) => setField("lastName", value)} />
-          <ProfileField label="Email" required type="email" value={form.email} onChange={(value) => setField("email", value)} />
+          <ProfileField label="Email (optional)" type="email" value={form.email} onChange={(value) => setField("email", value)} />
           <ProfileField label="Phone" value={form.phone} onChange={(value) => setField("phone", value)} />
           <ProfileField label="Nationality" required value={form.nationality} onChange={(value) => setField("nationality", value)} />
           <ProfileField label="National ID" value={form.nationalId} onChange={(value) => setField("nationalId", value)} />
@@ -298,7 +296,7 @@ export default function GuestsPage() {
           <ProfileField label="Company" value={form.companyName} onChange={(value) => setField("companyName", value)} />
           <ProfileField label="Vehicle registration" value={form.carRegistration} onChange={(value) => setField("carRegistration", value)} />
           <ProfileField label="Next of kin" value={form.nextOfKin} onChange={(value) => setField("nextOfKin", value)} />
-          <label className="block text-sm">VIP status<select className="msh-input mt-1" value={form.vipStatus} onChange={(event) => setField("vipStatus", event.target.value as VipStatus)}>{["NONE", "VIP1", "VIP2", "VIP3"].map((status) => <option key={status}>{status}</option>)}</select></label>
+          <ProfileField label="Next-of-kin contact number" type="tel" value={form.nextOfKinPhone} onChange={(value) => setField("nextOfKinPhone", value)} />
           <label className="block text-sm sm:col-span-2">Address<textarea className="msh-input mt-1 min-h-20" value={form.address} onChange={(event) => setField("address", event.target.value)} /></label>
           <label className="block text-sm sm:col-span-2">Notes<textarea className="msh-input mt-1 min-h-20" value={form.notes} onChange={(event) => setField("notes", event.target.value)} /></label>
         </div>
@@ -309,9 +307,9 @@ export default function GuestsPage() {
 
     <section className="msh-card overflow-hidden">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b p-4"><div><h2 className="font-semibold">Registered guests</h2><p className="text-sm text-slate-500">{total} profile{total === 1 ? "" : "s"}</p></div><div className="flex gap-2"><form className="flex gap-2" onSubmit={(event) => { event.preventDefault(); setPage(1); setSearch(searchInput.trim()); }}><input className="msh-input min-w-52" aria-label="Search guest profiles" placeholder="Search guests…" value={searchInput} onChange={(event) => setSearchInput(event.target.value)} /><button className="msh-btn msh-btn-outline" type="submit">Search</button></form><button className="msh-btn msh-btn-primary" type="button" onClick={startNew}>Add guest</button></div></div>
-      <div className="overflow-x-auto"><table className="w-full text-sm"><thead className="bg-[hsl(var(--muted))] text-left"><tr><th className="p-3">Guest</th><th className="p-3">Email / phone</th><th className="p-3">Nationality</th><th className="p-3">Reservations</th><th className="p-3">VIP</th><th className="p-3" /></tr></thead><tbody>
-        {loading ? <tr><td colSpan={6} className="p-5 text-center text-slate-500">Loading guest profiles…</td></tr> : guests.map((guest) => <tr key={guest.id} className="border-t"><td className="p-3 font-medium">{guest.firstName} {guest.lastName}</td><td className="p-3">{guest.email}<div className="text-xs text-slate-500">{guest.phone ?? "—"}</div></td><td className="p-3">{guest.nationality ?? "—"}</td><td className="p-3">{guest._count?.reservations ?? 0}</td><td className="p-3">{guest.vipStatus}</td><td className="p-3 text-right whitespace-nowrap"><button className="msh-btn msh-btn-outline text-xs" type="button" onClick={() => void viewGuest(guest.id)}>View</button><button className="msh-btn msh-btn-outline text-xs ml-2" type="button" onClick={() => editGuest(guest)}>Edit</button></td></tr>)}
-        {!loading && guests.length === 0 && <tr><td colSpan={6} className="p-5 text-center text-slate-500">No guest profiles found.</td></tr>}
+      <div className="overflow-x-auto"><table className="w-full text-sm"><thead className="bg-[hsl(var(--muted))] text-left"><tr><th className="p-3">Guest</th><th className="p-3">Email / phone</th><th className="p-3">Nationality</th><th className="p-3">Reservations</th><th className="p-3" /></tr></thead><tbody>
+        {loading ? <tr><td colSpan={5} className="p-5 text-center text-slate-500">Loading guest profiles…</td></tr> : guests.map((guest) => <tr key={guest.id} className="border-t"><td className="p-3 font-medium">{guest.firstName} {guest.lastName}</td><td className="p-3">{guest.email || "—"}<div className="text-xs text-slate-500">{guest.phone ?? "—"}</div></td><td className="p-3">{guest.nationality ?? "—"}</td><td className="p-3">{guest._count?.reservations ?? 0}</td><td className="p-3 text-right whitespace-nowrap"><button className="msh-btn msh-btn-outline text-xs" type="button" onClick={() => void viewGuest(guest.id)}>View</button><button className="msh-btn msh-btn-outline text-xs ml-2" type="button" onClick={() => editGuest(guest)}>Edit</button></td></tr>)}
+        {!loading && guests.length === 0 && <tr><td colSpan={5} className="p-5 text-center text-slate-500">No guest profiles found.</td></tr>}
       </tbody></table></div>
       <div className="flex items-center justify-between border-t p-3 text-sm"><span>Page {page} of {pageCount}</span><div className="flex gap-2"><button className="msh-btn msh-btn-outline text-xs" type="button" disabled={page <= 1 || loading} onClick={() => setPage((value) => value - 1)}>Previous</button><button className="msh-btn msh-btn-outline text-xs" type="button" disabled={page >= pageCount || loading} onClick={() => setPage((value) => value + 1)}>Next</button></div></div>
     </section>

@@ -17,7 +17,7 @@ export function serializeGuest(guest: {
   id: string;
   firstName: string;
   lastName: string;
-  email: string;
+  email: string | null;
   phone: string | null;
   nationality: string | null;
   nationalId: string | null;
@@ -27,6 +27,7 @@ export function serializeGuest(guest: {
   address: string | null;
   carRegistration: string | null;
   nextOfKin: string | null;
+  nextOfKinPhone: string | null;
 }) {
   return {
     id: guest.id,
@@ -44,6 +45,7 @@ export function serializeGuest(guest: {
     address: guest.address,
     carRegistration: guest.carRegistration,
     nextOfKin: guest.nextOfKin,
+    nextOfKinPhone: guest.nextOfKinPhone,
   };
 }
 
@@ -81,21 +83,21 @@ export async function signupGuest(input: { fullName: string; email: string; pass
     });
   }
 
-  const user = authPayload(guest);
+  const user = authPayload({ ...guest, email });
   return { token: signGuestToken(user), guest: serializeGuest(guest) };
 }
 
 export async function loginGuest(input: { email: string; password: string }) {
   const email = input.email.trim().toLowerCase();
   const guest = await prisma.guest.findUnique({ where: { email } });
-  if (!guest?.passwordHash) {
+  if (!guest?.passwordHash || !guest.email) {
     throw new AppError(401, "GST-AUTH-005", "Invalid email or password");
   }
   const valid = await bcrypt.compare(input.password, guest.passwordHash);
   if (!valid) {
     throw new AppError(401, "GST-AUTH-005", "Invalid email or password");
   }
-  const user = authPayload(guest);
+  const user = authPayload({ ...guest, email });
   return { token: signGuestToken(user), guest: serializeGuest(guest) };
 }
 
@@ -115,6 +117,7 @@ export async function updateGuestProfile(guestId: string, input: {
   address?: string;
   carRegistration?: string;
   nextOfKin?: string;
+  nextOfKinPhone?: string;
   idPassport?: string;
 }) {
   const current = await prisma.guest.findUnique({ where: { id: guestId } });
@@ -131,6 +134,7 @@ export async function updateGuestProfile(guestId: string, input: {
   if (input.address !== undefined) data.address = input.address.trim() || null;
   if (input.carRegistration !== undefined) data.carRegistration = input.carRegistration.trim() || null;
   if (input.nextOfKin !== undefined) data.nextOfKin = input.nextOfKin.trim() || null;
+  if (input.nextOfKinPhone !== undefined) data.nextOfKinPhone = input.nextOfKinPhone.trim() || null;
 
   if (input.idPassport !== undefined) {
     const value = input.idPassport.trim();
@@ -181,7 +185,7 @@ function serializeReservation(reservation: {
   contractedRate?: unknown;
   specialRequests: string | null;
   guestPaymentMethod: string | null;
-  guest: { firstName: string; lastName: string; email: string; phone: string | null; nationality: string | null; nationalId: string | null; passportNumber: string | null; companyName: string | null };
+  guest: { firstName: string; lastName: string; email: string | null; phone: string | null; nationality: string | null; nationalId: string | null; passportNumber: string | null; companyName: string | null };
   ratePlan: { baseRate: unknown; roomType: { name: string; description: string | null } };
   room: { number: string; roomType: { name: string } } | null;
 }) {
@@ -392,6 +396,7 @@ export async function placeGuestBooking(guestId: string, input: {
   const nationalId = input.nationalId ?? (idPassport && !/[A-Za-z]/.test(idPassport) ? idPassport : guest.nationalId);
   const passportNumber = input.passportNumber ?? (idPassport && /[A-Za-z]/.test(idPassport) ? idPassport : guest.passportNumber);
 
+  if (!guest.email) throw new AppError(400, "GST-EMAIL-001", "Add an email address to your profile before booking online");
   return createOnlineBooking({
     firstName: input.firstName ?? guest.firstName,
     lastName: input.lastName ?? guest.lastName,

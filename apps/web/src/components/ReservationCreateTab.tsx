@@ -7,7 +7,7 @@ interface Guest {
   id: string;
   firstName: string;
   lastName: string;
-  email: string;
+  email: string | null;
 }
 
 interface RoomType {
@@ -142,7 +142,7 @@ export function ReservationCreateTab() {
           Guest
           <select required className="msh-input mt-1" value={guestId} onChange={(event) => setGuestId(event.target.value)}>
             <option value="">Select registered guest</option>
-            {guests.map((guest) => <option key={guest.id} value={guest.id}>{guest.firstName} {guest.lastName} · {guest.email}</option>)}
+            {guests.map((guest) => <option key={guest.id} value={guest.id}>{guest.firstName} {guest.lastName}{guest.email ? ` · ${guest.email}` : ""}</option>)}
           </select>
         </label>
 

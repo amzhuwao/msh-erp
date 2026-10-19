@@ -48,6 +48,7 @@ guestRouter.patch("/me", authenticateGuest, asyncHandler(async (req, res) => {
     address: z.string().optional(),
     carRegistration: z.string().optional(),
     nextOfKin: z.string().optional(),
+    nextOfKinPhone: z.string().optional(),
     idPassport: z.string().optional(),
   }), req);
   res.json({ guest: await updateGuestProfile(req.guest!.id, body) });

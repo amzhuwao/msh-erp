@@ -176,7 +176,7 @@ export async function notifyReceptionOfOnlineBooking(reservation: {
   checkInDate: Date;
   checkOutDate: Date;
   adults: number;
-  guest: { firstName: string; lastName: string; email: string; phone: string | null; nationality: string | null };
+  guest: { firstName: string; lastName: string; email: string | null; phone: string | null; nationality: string | null };
   ratePlan: { name: string; roomType: { name: string } };
 }) {
   const property = await prisma.propertyConfiguration.findFirst();
@@ -187,7 +187,7 @@ export async function notifyReceptionOfOnlineBooking(reservation: {
     ``,
     `Booking: ${reservation.reservationNumber}`,
     `Guest: ${reservation.guest.firstName} ${reservation.guest.lastName}`,
-    `Email: ${reservation.guest.email}`,
+    `Email: ${reservation.guest.email ?? "—"}`,
     `Phone: ${reservation.guest.phone ?? "—"}`,
     `Nationality: ${reservation.guest.nationality ?? "—"}`,
     `Room type: ${reservation.ratePlan.roomType.name}`,

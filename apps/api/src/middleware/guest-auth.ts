@@ -43,7 +43,7 @@ export async function authenticateGuest(req: Request, _res: Response, next: Next
     }
 
     const guest = await prisma.guest.findUnique({ where: { id: payload.sub } });
-    if (!guest) {
+    if (!guest?.email) {
       throw new AppError(401, "GST-AUTH-002", "Invalid guest session");
     }
 

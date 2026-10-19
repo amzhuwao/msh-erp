@@ -7,7 +7,7 @@ import { FolioPanel } from "./FolioPanel";
 interface InHouse {
   id: string;
   reservationNumber: string;
-  guest: { firstName: string; lastName: string; email: string };
+  guest: { firstName: string; lastName: string; email: string | null };
   room: { number: string; roomType: { name: string } } | null;
   checkOutDate: string;
   folios: { id: string }[];
@@ -80,7 +80,7 @@ export function InHouseTab() {
                 </td>
                 <td className="py-3 pr-4">
                   <div className="font-medium">{item.guest.firstName} {item.guest.lastName}</div>
-                  <div className="text-xs text-slate-400">{item.guest.email}</div>
+                  {item.guest.email && <div className="text-xs text-slate-400">{item.guest.email}</div>}
                 </td>
                 <td className="py-3 pr-4">{item.room?.roomType.name}</td>
                 <td className="py-3">{item.checkOutDate.slice(0, 10)}</td>

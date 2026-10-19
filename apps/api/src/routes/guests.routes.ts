@@ -1,6 +1,5 @@
 import { Router } from "express";
 import { z } from "zod";
-import { VipStatus } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { AppError } from "../lib/errors.js";
 import { authenticate, authorize } from "../middleware/auth.js";
@@ -16,7 +15,10 @@ guestsRouter.use(authenticate);
 const guestBodySchema = z.object({
   firstName: z.string().trim().min(1),
   lastName: z.string().trim().min(1),
-  email: z.string().trim().email(),
+  email: z.preprocess(
+    (value) => typeof value === "string" && value.trim() === "" ? null : value,
+    z.string().trim().email().nullable().optional(),
+  ),
   phone: z.string().nullable().optional(),
   nationality: z.string().trim().min(2, "Nationality is required"),
   nationalId: z.string().nullable().optional(),
@@ -26,7 +28,7 @@ const guestBodySchema = z.object({
   address: z.string().nullable().optional(),
   carRegistration: z.string().nullable().optional(),
   nextOfKin: z.string().nullable().optional(),
-  vipStatus: z.nativeEnum(VipStatus).optional(),
+  nextOfKinPhone: z.string().nullable().optional(),
   notes: z.string().nullable().optional(),
 });
 
@@ -44,7 +46,7 @@ const guestSelect = {
   address: true,
   carRegistration: true,
   nextOfKin: true,
-  vipStatus: true,
+  nextOfKinPhone: true,
   notes: true,
   createdAt: true,
   updatedAt: true,
@@ -56,7 +58,7 @@ function normalizedGuestData(data: z.infer<typeof guestBodySchema>) {
     ...data,
     firstName: data.firstName.trim(),
     lastName: data.lastName.trim(),
-    email: data.email.trim().toLowerCase(),
+    email: data.email?.trim().toLowerCase() || null,
     phone: data.phone?.trim() || null,
     nationality: data.nationality.trim(),
     nationalId: data.nationalId?.trim() || null,
@@ -66,6 +68,7 @@ function normalizedGuestData(data: z.infer<typeof guestBodySchema>) {
     address: data.address?.trim() || null,
     carRegistration: data.carRegistration?.trim() || null,
     nextOfKin: data.nextOfKin?.trim() || null,
+    nextOfKinPhone: data.nextOfKinPhone?.trim() || null,
     notes: data.notes?.trim() || null,
   };
 }

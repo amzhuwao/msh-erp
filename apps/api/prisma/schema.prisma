@@ -449,7 +449,7 @@ model Guest {
   id               String        @id @default(cuid())
   firstName        String
   lastName         String
-  email            String        @unique
+  email            String?       @unique
   phone            String?
   nationality      String?
   nationalId       String?
@@ -459,6 +459,7 @@ model Guest {
   address          String?
   carRegistration  String?
   nextOfKin        String?
+  nextOfKinPhone   String?
   passwordHash     String?
   vipStatus        VipStatus     @default(NONE)
   notes            String?
