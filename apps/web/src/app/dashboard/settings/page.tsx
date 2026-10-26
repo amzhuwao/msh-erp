@@ -7,7 +7,10 @@ import { PageHeader } from "@/components/ui/PageHeader";
 interface Property {
   address: string;
   vatNumber: string | null;
+  tinNumber: string | null;
   bpNumber: string | null;
+  vatRatePercent: string;
+  ztaLevyRatePercent: string;
   contactPhone: string | null;
   netoneNumber: string | null;
   whatsappNumber: string | null;
@@ -27,13 +30,24 @@ export default function SettingsPage() {
   const [saved, setSaved] = useState("");
 
   useEffect(() => {
-    apiFetch<Property>("/api/property").then(setForm);
+    apiFetch<Property>("/api/property").then((property) => setForm({
+      ...property,
+      vatRatePercent: String(Number(property.vatRatePercent ?? 15)),
+      ztaLevyRatePercent: String(Number(property.ztaLevyRatePercent ?? 2)),
+    }));
   }, []);
 
   async function save() {
     if (!form) return;
-    await apiFetch("/api/property", { method: "PUT", body: JSON.stringify(form) });
-    setSaved("Saved — receipts and invoices will use these details.");
+    await apiFetch("/api/property", {
+      method: "PUT",
+      body: JSON.stringify({
+        ...form,
+        vatRatePercent: Number(form.vatRatePercent),
+        ztaLevyRatePercent: Number(form.ztaLevyRatePercent),
+      }),
+    });
+    setSaved("Saved — new charges, reports and invoices will use these tax rates.");
   }
 
   if (!form) return <div className="p-6">Loading…</div>;
@@ -49,11 +63,14 @@ export default function SettingsPage() {
 
   return (
     <div className="p-6 max-w-3xl">
-      <PageHeader title="Property details" description="Address, NetOne, banking and EcoCash printed on invoices, receipts and quotes" />
+      <PageHeader title="Property details" description="Property contact details, payment instructions and tax rates used for new charges and invoices" />
       <div className="msh-card p-4 grid md:grid-cols-2 gap-3">
         {field("address", "Address")}
         {field("vatNumber", "VAT number")}
+        {field("tinNumber", "TIN number")}
         {field("bpNumber", "ZIMRA BP number")}
+        <label className="text-sm block">VAT rate (%)<input className="msh-input mt-1" type="number" min="0" max="100" step="0.01" value={form.vatRatePercent} onChange={(e) => setForm({ ...form, vatRatePercent: e.target.value })} /></label>
+        <label className="text-sm block">ZTA levy (%)<input className="msh-input mt-1" type="number" min="0" max="100" step="0.01" value={form.ztaLevyRatePercent} onChange={(e) => setForm({ ...form, ztaLevyRatePercent: e.target.value })} /></label>
         {field("contactPhone", "Landline")}
         {field("netoneNumber", "NetOne number")}
         {field("whatsappNumber", "WhatsApp")}

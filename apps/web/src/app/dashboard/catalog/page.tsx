@@ -32,9 +32,9 @@ interface Venue {
   id: string;
   name: string;
   locationDescription: string | null;
-  maxCapacityBanquet: number;
-  maxCapacityCinema: number;
-  maxCapacityBoardroom: number;
+  maxCapacityChairsOnly: number;
+  maxCapacityTracers: number;
+  maxCapacityRoundTables: number;
   halfDayRate: string;
   fullDayRate: string;
   isActive: boolean;
@@ -135,6 +135,7 @@ export default function CatalogPage() {
   const [serviceItems, setServiceItems] = useState<ServiceItem[]>([]);
   const [editing, setEditing] = useState<{ kind: string; id: string | null } | null>(null);
   const [form, setForm] = useState<Record<string, string>>({});
+  const [deletingId, setDeletingId] = useState("");
 
   const load = useCallback(async () => {
     const [rt, rm, vn, pk, rs, ot, mi, sv] = await Promise.all([
@@ -197,7 +198,7 @@ export default function CatalogPage() {
       for (const key of [
         "baseRate", "halfDayRate", "fullDayRate", "ratePerPax", "dailyRentalRate",
         "price", "cost", "taxRate", "maxAdults", "maxChildren", "floor",
-        "maxCapacityBanquet", "maxCapacityCinema", "maxCapacityBoardroom", "totalInventoryCount",
+        "maxCapacityChairsOnly", "maxCapacityTracers", "maxCapacityRoundTables", "totalInventoryCount",
       ]) {
         if (key in payload && payload[key] !== "") payload[key] = Number(payload[key]);
       }
@@ -229,6 +230,54 @@ export default function CatalogPage() {
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Venue could not be deleted");
+    }
+  }
+
+  async function removeRoomType(roomType: RoomType) {
+    if (!window.confirm(`Delete room type “${roomType.name}” and its unused rate plans? This cannot be undone.`)) return;
+    setDeletingId(roomType.id);
+    setError("");
+    setMessage("");
+    try {
+      await apiFetch(`/api/catalog/room-types/${roomType.id}`, { method: "DELETE" });
+      setMessage(`Deleted room type ${roomType.name}.`);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Room type could not be deleted");
+    } finally {
+      setDeletingId("");
+    }
+  }
+
+  async function removeRoom(room: Room) {
+    if (!window.confirm(`Delete room ${room.number}? Rooms with reservation, group, housekeeping, cleaning, or maintenance history cannot be deleted.`)) return;
+    setDeletingId(room.id);
+    setError("");
+    setMessage("");
+    try {
+      await apiFetch(`/api/catalog/rooms/${room.id}`, { method: "DELETE" });
+      setMessage(`Deleted room ${room.number}.`);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Room could not be deleted");
+    } finally {
+      setDeletingId("");
+    }
+  }
+
+  async function removeCatalogItem(path: string, id: string, label: string, itemName: string) {
+    if (!window.confirm(`Delete ${label} “${itemName}”? Items already used in bookings, orders, or allocations may be protected to preserve history.`)) return;
+    setDeletingId(id);
+    setError("");
+    setMessage("");
+    try {
+      await apiFetch(path, { method: "DELETE" });
+      setMessage(`Deleted ${label} ${itemName}.`);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : `${label} could not be deleted`);
+    } finally {
+      setDeletingId("");
     }
   }
 
@@ -342,7 +391,7 @@ export default function CatalogPage() {
               const numeric = [
                 "baseRate", "halfDayRate", "fullDayRate", "ratePerPax", "dailyRentalRate",
                 "price", "cost", "taxRate", "maxAdults", "maxChildren", "floor",
-                "maxCapacityBanquet", "maxCapacityCinema", "maxCapacityBoardroom", "totalInventoryCount",
+                "maxCapacityChairsOnly", "maxCapacityTracers", "maxCapacityRoundTables", "totalInventoryCount",
               ].includes(key);
               return (
                 <Field
@@ -413,6 +462,15 @@ export default function CatalogPage() {
                         >
                           Edit
                         </button>
+                        <button
+                          type="button"
+                          className="msh-btn msh-btn-outline ml-2 text-xs text-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                          disabled={deletingId === rt.id}
+                          title={rt._count.rooms > 0 ? "Delete this type after its rooms are removed or reassigned." : "Delete room type"}
+                          onClick={() => void removeRoomType(rt)}
+                        >
+                          {deletingId === rt.id ? "Deleting…" : "Delete"}
+                        </button>
                       </td>
                     </tr>
                   ))}
@@ -468,6 +526,14 @@ export default function CatalogPage() {
                         >
                           Edit
                         </button>
+                        <button
+                          type="button"
+                          className="msh-btn msh-btn-outline ml-2 text-xs text-red-700"
+                          disabled={deletingId === r.id}
+                          onClick={() => void removeRoom(r)}
+                        >
+                          {deletingId === r.id ? "Deleting…" : "Delete"}
+                        </button>
                       </td>
                     </tr>
                   ))}
@@ -487,8 +553,8 @@ export default function CatalogPage() {
                 type="button"
                 className="msh-btn msh-btn-primary"
                 onClick={() => openCreate("venue", {
-                  name: "", locationDescription: "", maxCapacityBanquet: "50", maxCapacityCinema: "80",
-                  maxCapacityBoardroom: "20", halfDayRate: "200", fullDayRate: "350", isActive: "true",
+                  name: "", locationDescription: "", maxCapacityChairsOnly: "50", maxCapacityTracers: "80",
+                  maxCapacityRoundTables: "20", halfDayRate: "200", fullDayRate: "350", isActive: "true",
                 })}
               >
                 Add venue
@@ -501,7 +567,7 @@ export default function CatalogPage() {
                     <th className="p-3">Name</th>
                     <th className="p-3">Half day</th>
                     <th className="p-3">Full day</th>
-                    <th className="p-3">Capacity (B/C/Br)</th>
+                    <th className="p-3">Chairs Only / Tracers / Round Tables</th>
                     <th className="p-3">Active</th>
                     <th className="p-3" />
                   </tr>
@@ -512,7 +578,7 @@ export default function CatalogPage() {
                       <td className="p-3 font-medium">{v.name}</td>
                       <td className="p-3">{money(v.halfDayRate)}</td>
                       <td className="p-3">{money(v.fullDayRate)}</td>
-                      <td className="p-3">{v.maxCapacityBanquet}/{v.maxCapacityCinema}/{v.maxCapacityBoardroom}</td>
+                      <td className="p-3">{v.maxCapacityChairsOnly}/{v.maxCapacityTracers}/{v.maxCapacityRoundTables}</td>
                       <td className="p-3">{v.isActive ? "Yes" : "No"}</td>
                       <td className="p-3 text-right">
                         <button
@@ -521,9 +587,9 @@ export default function CatalogPage() {
                           onClick={() => openEdit("venue", v.id, {
                             name: v.name,
                             locationDescription: v.locationDescription ?? "",
-                            maxCapacityBanquet: String(v.maxCapacityBanquet),
-                            maxCapacityCinema: String(v.maxCapacityCinema),
-                            maxCapacityBoardroom: String(v.maxCapacityBoardroom),
+                            maxCapacityChairsOnly: String(v.maxCapacityChairsOnly),
+                            maxCapacityTracers: String(v.maxCapacityTracers),
+                            maxCapacityRoundTables: String(v.maxCapacityRoundTables),
                             halfDayRate: String(Number(v.halfDayRate)),
                             fullDayRate: String(Number(v.fullDayRate)),
                             isActive: String(v.isActive),
@@ -589,6 +655,14 @@ export default function CatalogPage() {
                         >
                           Edit
                         </button>
+                        <button
+                          type="button"
+                          className="msh-btn msh-btn-outline text-xs ml-2 text-red-700"
+                          disabled={deletingId === p.id}
+                          onClick={() => void removeCatalogItem(`/api/catalog/packages/${p.id}`, p.id, "package", p.name)}
+                        >
+                          {deletingId === p.id ? "Deleting…" : "Delete"}
+                        </button>
                       </td>
                     </tr>
                   ))}
@@ -641,6 +715,14 @@ export default function CatalogPage() {
                         >
                           Edit
                         </button>
+                        <button
+                          type="button"
+                          className="msh-btn msh-btn-outline text-xs ml-2 text-red-700"
+                          disabled={deletingId === r.id}
+                          onClick={() => void removeCatalogItem(`/api/catalog/resources/${r.id}`, r.id, "resource", r.name)}
+                        >
+                          {deletingId === r.id ? "Deleting…" : "Delete"}
+                        </button>
                       </td>
                     </tr>
                   ))}
@@ -675,6 +757,14 @@ export default function CatalogPage() {
                     onClick={() => openEdit("outlet", o.id, { name: o.name, isActive: String(o.isActive) })}
                   >
                     Edit
+                  </button>
+                  <button
+                    type="button"
+                    className="msh-btn msh-btn-outline text-xs mt-2 ml-2 text-red-700"
+                    disabled={deletingId === o.id}
+                    onClick={() => void removeCatalogItem(`/api/catalog/outlets/${o.id}`, o.id, "outlet", o.name)}
+                  >
+                    {deletingId === o.id ? "Deleting…" : "Delete"}
                   </button>
                 </div>
               ))}
@@ -743,6 +833,14 @@ export default function CatalogPage() {
                         >
                           Edit
                         </button>
+                        <button
+                          type="button"
+                          className="msh-btn msh-btn-outline text-xs ml-2 text-red-700"
+                          disabled={deletingId === m.id}
+                          onClick={() => void removeCatalogItem(`/api/catalog/menu-items/${m.id}`, m.id, "menu item", m.name)}
+                        >
+                          {deletingId === m.id ? "Deleting…" : "Delete"}
+                        </button>
                       </td>
                     </tr>
                   ))}
@@ -803,6 +901,14 @@ export default function CatalogPage() {
                         })}
                       >
                         Edit
+                      </button>
+                      <button
+                        type="button"
+                        className="msh-btn msh-btn-outline text-xs ml-2 text-red-700"
+                        disabled={deletingId === s.id}
+                        onClick={() => void removeCatalogItem(`/api/catalog/service-items/${s.id}`, s.id, "service item", s.name)}
+                      >
+                        {deletingId === s.id ? "Deleting…" : "Delete"}
                       </button>
                     </td>
                   </tr>

@@ -174,7 +174,7 @@ export async function createReservation(input: {
         children: input.children,
         specialRequests: input.specialRequests,
         guestPaymentMethod: input.guestPaymentMethod,
-        status: ReservationStatus.CONFIRMED,
+        status: ReservationStatus.TENTATIVE,
         source,
         corporateCompanyId: input.companyId,
         contractedRate,
@@ -192,9 +192,9 @@ export async function createReservation(input: {
       data: {
         reservationId: created.id,
         oldStatus: null,
-        newStatus: ReservationStatus.CONFIRMED,
+        newStatus: ReservationStatus.TENTATIVE,
         changedById: input.createdById,
-        changeReason: source === BookingSource.ONLINE ? "Online booking" : "Reservation created",
+        changeReason: source === BookingSource.ONLINE ? "Online booking; awaiting deposit" : "Reservation created; awaiting deposit",
       },
     });
 
@@ -226,6 +226,134 @@ export async function createReservation(input: {
   return reservation;
 }
 
+export async function updateReservation(input: {
+  reservationId: string;
+  guestId?: string;
+  roomId?: string | null;
+  checkInDate?: string;
+  checkOutDate?: string;
+  adults?: number;
+  children?: number;
+  specialRequests?: string | null;
+  userId: string;
+  ipAddress?: string;
+}) {
+  const reservation = await prisma.reservation.findUnique({ where: { id: input.reservationId } });
+  if (!reservation) throw new AppError(404, "RES-006", "Reservation not found");
+  if (!([ReservationStatus.TENTATIVE, ReservationStatus.CONFIRMED] as ReservationStatus[]).includes(reservation.status)) {
+    throw new AppError(400, "RES-018", "Only tentative or confirmed reservations can be edited");
+  }
+
+  const checkIn = toDateOnly(input.checkInDate ?? reservation.checkInDate);
+  const checkOut = toDateOnly(input.checkOutDate ?? reservation.checkOutDate);
+  if (Number.isNaN(checkIn.getTime()) || Number.isNaN(checkOut.getTime())) {
+    throw new AppError(400, "RES-002", "Reservation dates are invalid");
+  }
+  if (checkIn >= checkOut) throw new AppError(400, "RES-002", "Check-out date must be after check-in");
+  const guestId = input.guestId ?? reservation.guestId;
+  const guest = await prisma.guest.findUnique({ where: { id: guestId } });
+  if (!guest) throw new AppError(404, "GST-001", "Guest not found");
+  const roomId = input.roomId === undefined ? reservation.roomId : input.roomId;
+  const room = roomId ? await prisma.room.findUnique({ where: { id: roomId } }) : null;
+  const ratePlan = await prisma.ratePlan.findUnique({ where: { id: reservation.ratePlanId }, include: { roomType: true } });
+  if (!ratePlan) throw new AppError(404, "RES-003", "Reservation rate plan not found");
+  if (roomId && !room?.isActive) throw new AppError(404, "RES-005", "Selected room is inactive or not found");
+  if (room && room.roomTypeId !== ratePlan.roomTypeId) throw new AppError(400, "RES-005", "Selected room does not match the reservation room type");
+  const adults = input.adults ?? reservation.adults;
+  const children = input.children ?? reservation.children;
+  if (adults > ratePlan.roomType.maxAdults || children > ratePlan.roomType.maxChildren) {
+    throw new AppError(400, "RES-004", "Guest count exceeds room type capacity");
+  }
+  if (roomId) await checkRoomOverlap(roomId, checkIn, checkOut, reservation.id);
+
+  const updated = await prisma.$transaction(async (tx) => {
+    const result = await tx.reservation.update({
+      where: { id: reservation.id },
+      data: {
+        guestId,
+        roomId,
+        checkInDate: checkIn,
+        checkOutDate: checkOut,
+        adults,
+        children,
+        ...(input.specialRequests !== undefined ? { specialRequests: input.specialRequests?.trim() || null } : {}),
+      },
+      include: {
+        guest: true,
+        room: { include: { roomType: true } },
+        ratePlan: { include: { roomType: true } },
+        folios: { include: { lines: { select: { lineType: true, amount: true } } } },
+      },
+    });
+    if (guestId !== reservation.guestId) {
+      await tx.folio.updateMany({ where: { reservationId: reservation.id }, data: { guestId } });
+    }
+    return result;
+  });
+  await writeAuditLog({
+    userId: input.userId,
+    module: "Reservations",
+    action: "RESERVATION_UPDATE",
+    entityType: "Reservation",
+    entityId: reservation.id,
+    details: { guestId, roomId, checkInDate: checkIn.toISOString().slice(0, 10), checkOutDate: checkOut.toISOString().slice(0, 10), adults, children },
+    ipAddress: input.ipAddress,
+  });
+  return updated;
+}
+
+export async function moveReservation(input: {
+  reservationId: string;
+  roomId: string;
+  checkInDate: string;
+  userId: string;
+  ipAddress?: string;
+}) {
+  const reservation = await prisma.reservation.findUnique({
+    where: { id: input.reservationId },
+    include: { ratePlan: true, room: true },
+  });
+  if (!reservation) throw new AppError(404, "RES-006", "Reservation not found");
+  if (!([ReservationStatus.CONFIRMED, ReservationStatus.TENTATIVE] as ReservationStatus[]).includes(reservation.status)) {
+    throw new AppError(400, "RES-015", "Only tentative or confirmed reservations can be moved from the tape chart");
+  }
+
+  const nextCheckIn = toDateOnly(input.checkInDate);
+  const nights = Math.round((toDateOnly(reservation.checkOutDate).getTime() - toDateOnly(reservation.checkInDate).getTime()) / 86_400_000);
+  if (nights < 1) throw new AppError(400, "RES-002", "Reservation dates are invalid");
+  if (nextCheckIn < utcToday()) throw new AppError(400, "RES-016", "A reservation cannot be moved to a past date");
+  const nextCheckOut = new Date(nextCheckIn.getTime() + nights * 86_400_000);
+
+  const room = await prisma.room.findUnique({ where: { id: input.roomId } });
+  if (!room?.isActive) throw new AppError(404, "RES-005", "Selected room is inactive or not found");
+  if (room.roomTypeId !== reservation.ratePlan.roomTypeId) {
+    throw new AppError(400, "RES-005", "Selected room does not match the reservation room type");
+  }
+  await checkRoomOverlap(room.id, nextCheckIn, nextCheckOut, reservation.id);
+
+  const updated = await prisma.reservation.update({
+    where: { id: reservation.id },
+    data: { roomId: room.id, checkInDate: nextCheckIn, checkOutDate: nextCheckOut },
+    include: { guest: true, room: { include: { roomType: true } }, ratePlan: { include: { roomType: true } } },
+  });
+  await writeAuditLog({
+    userId: input.userId,
+    module: "Reservations",
+    action: "RESERVATION_TAPE_CHART_MOVE",
+    entityType: "Reservation",
+    entityId: reservation.id,
+    details: {
+      fromRoomId: reservation.roomId,
+      toRoomId: room.id,
+      fromCheckInDate: reservation.checkInDate.toISOString().slice(0, 10),
+      toCheckInDate: nextCheckIn.toISOString().slice(0, 10),
+      nights,
+    },
+    ipAddress: input.ipAddress,
+  });
+  return updated;
+}
+
 export async function checkInReservation(input: {
   reservationId: string;
   roomId: string;
@@ -237,7 +365,7 @@ export async function checkInReservation(input: {
 }) {
   const reservation = await prisma.reservation.findUnique({
     where: { id: input.reservationId },
-    include: { guest: true, room: true },
+    include: { guest: true, room: true, folios: { include: { lines: true } } },
   });
 
   if (!reservation) {
@@ -246,6 +374,13 @@ export async function checkInReservation(input: {
 
   if (!([ReservationStatus.CONFIRMED, ReservationStatus.TENTATIVE] as ReservationStatus[]).includes(reservation.status)) {
     throw new AppError(400, "RES-007", "Reservation is not eligible for check-in");
+  }
+
+  const amountPaid = reservation.folios.reduce((total, folio) => total + folio.lines
+    .filter((line) => line.lineType === "PAYMENT")
+    .reduce((sum, line) => sum + Number(line.amount), 0), 0);
+  if (amountPaid <= 0) {
+    throw new AppError(400, "RES-019", "A reservation needs a recorded payment before it can be confirmed or checked in");
   }
 
   const stayDate = toDateOnly(reservation.checkInDate);
@@ -307,7 +442,8 @@ export async function checkInReservation(input: {
       include: {
         guest: true,
         room: { include: { roomType: true } },
-        ratePlan: true,
+        ratePlan: { include: { roomType: true } },
+        folios: { include: { lines: { select: { lineType: true, amount: true } } } },
       },
     });
 

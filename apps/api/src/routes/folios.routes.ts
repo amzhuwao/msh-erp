@@ -66,6 +66,14 @@ foliosRouter.post(
 );
 
 foliosRouter.get(
+  "/:id/proforma",
+  authorize("Reservations", "VIEW"),
+  asyncHandler(async (req, res) => {
+    res.json(await buildFolioDocument(paramId(req.params.id), "proforma"));
+  }),
+);
+
+foliosRouter.get(
   "/:id/invoice",
   authorize("Reservations", "VIEW"),
   asyncHandler(async (req, res) => {

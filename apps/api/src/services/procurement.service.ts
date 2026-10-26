@@ -3,6 +3,7 @@ import { prisma } from "../lib/prisma.js";
 import { AppError } from "../lib/errors.js";
 import { nextDocumentNumber, writeAuditLog } from "./system.service.js";
 import { receiveStockInTransaction } from "./inventory.service.js";
+import { VAT_RATE } from "../lib/tax.js";
 
 export async function listSuppliers() {
   return prisma.supplier.findMany({ where: { isActive: true }, orderBy: { name: "asc" } });
@@ -96,7 +97,7 @@ export async function createPurchaseOrder(input: {
 }) {
   if (input.items.length === 0) throw new AppError(400, "PRC-001", "At least one line is required");
   const subtotal = input.items.reduce((s, i) => s + i.quantity * i.unitPrice, 0);
-  const taxAmount = Math.round(subtotal * 0.15 * 100) / 100;
+  const taxAmount = Math.round(subtotal * VAT_RATE * 100) / 100;
   const totalAmount = subtotal + taxAmount;
   const poNumber = await nextDocumentNumber("PO");
 
@@ -176,7 +177,7 @@ export async function selectSupplierQuote(input: { purchaseOrderId: string; quot
   const quote = await prisma.supplierQuote.findFirst({ where: { id: input.quoteId, purchaseOrderId: po.id }, include: { lines: true } });
   if (!quote) throw new AppError(404, "PRC-026", "Supplier quote not found for this purchase order");
   const subtotal = Number(quote.totalAmount);
-  const taxAmount = Math.round(subtotal * 0.15 * 100) / 100;
+  const taxAmount = Math.round(subtotal * VAT_RATE * 100) / 100;
   const requiredApprovals = await getRequiredApprovals(subtotal + taxAmount);
   await prisma.$transaction(async (tx) => {
     await tx.supplierQuote.updateMany({ where: { purchaseOrderId: po.id }, data: { isSelected: false } });
@@ -254,7 +255,7 @@ export async function validateInvoiceMatch(input: {
   });
   const matched = lines.every((line) => !line.quantityVariance && !line.priceVariance);
   const netAmount = lines.reduce((sum, line) => sum + line.lineAmount, 0);
-  const taxAmount = input.taxAmount ?? Math.round(netAmount * 0.15 * 100) / 100;
+  const taxAmount = input.taxAmount ?? Math.round(netAmount * VAT_RATE * 100) / 100;
   const invoice = await prisma.supplierInvoice.create({
     data: {
       invoiceNumber: input.invoiceNumber,

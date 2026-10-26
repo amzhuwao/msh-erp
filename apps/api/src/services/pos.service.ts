@@ -3,6 +3,7 @@ import { prisma } from "../lib/prisma.js";
 import { AppError } from "../lib/errors.js";
 import { nextDocumentNumber, writeAuditLog } from "./system.service.js";
 import { postPosCashSale, postRoomChargeToLedger } from "./finance.service.js";
+import { VAT_RATE } from "../lib/tax.js";
 
 export async function getPosMenu(outletId?: string) {
   const outlets = await prisma.posOutlet.findMany({
@@ -126,6 +127,8 @@ export async function createPosOrder(input: {
   tableNumber?: string;
   cashierUserId: string;
   items: { menuItemId: string; quantity: number; modifierDetails?: string[] }[];
+  walkInGuestName?: string;
+  walkInGuestPhone?: string;
   ipAddress?: string;
 }) {
   if (input.items.length === 0) {
@@ -143,7 +146,7 @@ export async function createPosOrder(input: {
   const lineData = input.items.map((item) => {
     const menu = menuMap.get(item.menuItemId)!;
     const unitPrice = Number(menu.price);
-    const taxRate = Number(menu.taxRate);
+    const taxRate = VAT_RATE;
     return {
       menuItemId: item.menuItemId,
       quantity: item.quantity,
@@ -164,6 +167,8 @@ export async function createPosOrder(input: {
         outletId: input.outletId,
         sessionId: input.sessionId,
         tableNumber: input.tableNumber,
+        walkInGuestName: input.walkInGuestName?.trim() || undefined,
+        walkInGuestPhone: input.walkInGuestPhone?.trim() || undefined,
         cashierUserId: input.cashierUserId,
         subTotal: totals.subTotal,
         taxAmount: totals.taxAmount,
@@ -196,13 +201,13 @@ export async function createPosOrder(input: {
   return order;
 }
 
-export async function validateRoomCharge(roomNumber: string) {
+export async function validateRoomCharge(roomNumber: string, billTo: "ROOM" | "GROUP" = "ROOM") {
   const room = await prisma.room.findUnique({
     where: { number: roomNumber },
     include: {
       reservations: {
         where: { status: ReservationStatus.CHECKED_IN },
-        include: { guest: true, folios: true },
+        include: { guest: true, folios: true, groupReservation: true },
         take: 1,
       },
     },
@@ -217,10 +222,32 @@ export async function validateRoomCharge(roomNumber: string) {
     throw new AppError(400, "POS-009", "Room is not occupied by a checked-in guest");
   }
 
+  if (billTo === "GROUP") {
+    if (!reservation.groupReservationId || !reservation.groupReservation) {
+      throw new AppError(400, "POS-017", "This room is not part of a checked-in group stay");
+    }
+    if (["CLOSED", "CANCELLED"].includes(reservation.groupReservation.status)) {
+      throw new AppError(400, "POS-018", "This group account is closed");
+    }
+    const groupGuest = await prisma.groupGuest.findFirst({ where: { reservationId: reservation.id, checkInStatus: "CHECKED_IN" } });
+    if (!groupGuest) throw new AppError(400, "POS-017", "This room is not assigned to a checked-in group member");
+    return {
+      valid: true,
+      billTo,
+      roomNumber: room.number,
+      reservationId: reservation.id,
+      groupReservationId: reservation.groupReservation.id,
+      groupName: reservation.groupReservation.groupName,
+      groupCode: reservation.groupReservation.groupCode,
+      guestName: groupGuest.fullName,
+    };
+  }
+
   const folio = reservation.folios.find((f) => f.status === "OPEN") ?? reservation.folios[0];
 
   return {
     valid: true,
+    billTo,
     roomNumber: room.number,
     reservationId: reservation.id,
     guestName: `${reservation.guest.firstName} ${reservation.guest.lastName}`,
@@ -232,6 +259,7 @@ export async function payPosOrder(input: {
   orderId: string;
   paymentMethod: PosPaymentMethod;
   roomNumber?: string;
+  billTo?: "ROOM" | "GROUP";
   userId: string;
   ipAddress?: string;
 }) {
@@ -260,6 +288,7 @@ export async function payPosOrder(input: {
     const amount = Number(order.totalAmount);
     const netAmount = Number(order.subTotal);
     const taxAmount = Number(order.taxAmount);
+    const billTo = input.billTo ?? "ROOM";
 
     const updated = await prisma.$transaction(async (tx) => {
       const claim = await tx.posOrder.updateMany({
@@ -275,32 +304,52 @@ export async function payPosOrder(input: {
 
       const room = await tx.room.findUnique({
         where: { number: input.roomNumber! },
-        include: { reservations: { where: { status: ReservationStatus.CHECKED_IN }, include: { folios: { include: { lines: true } } }, take: 1 } },
+        include: { reservations: { where: { status: ReservationStatus.CHECKED_IN }, include: { folios: { include: { lines: true } }, groupReservation: true }, take: 1 } },
       });
       const reservation = room?.reservations[0];
       if (!room) throw new AppError(404, "POS-008", "Room not found");
       if (!reservation) throw new AppError(400, "POS-009", "Room is not occupied by a checked-in guest");
-      if (reservation.cashOnly) throw new AppError(400, "POS-015", "This reservation is marked cash-only");
-
-      const folio = reservation.folios.find((candidate) => candidate.status === FolioStatus.OPEN);
-      if (!folio) throw new AppError(400, "POS-016", "No open folio is available for this reservation");
-      await tx.folioLine.create({
-        data: {
-          folioId: folio.id,
-          lineType: FolioLineType.CHARGE,
-          description,
-          amount,
-          department,
-          taxRate: netAmount > 0 ? taxAmount / netAmount : 0,
-          netAmount,
-          vatAmount: taxAmount,
-          levyAmount: 0,
-          postedById: input.userId,
-          posOrderId: order.id,
-        },
-      });
-
-      await tx.posOrder.update({ where: { id: order.id }, data: { reservationId: reservation.id } });
+      if (billTo === "GROUP") {
+        if (!reservation.groupReservationId || !reservation.groupReservation) {
+          throw new AppError(400, "POS-017", "This room is not part of a checked-in group stay");
+        }
+        if (["CLOSED", "CANCELLED"].includes(reservation.groupReservation.status)) {
+          throw new AppError(400, "POS-018", "This group account is closed");
+        }
+        const groupGuest = await tx.groupGuest.findFirst({ where: { reservationId: reservation.id, checkInStatus: "CHECKED_IN" } });
+        if (!groupGuest) throw new AppError(400, "POS-017", "This room is not assigned to a checked-in group member");
+        await tx.groupCharge.create({
+          data: {
+            groupReservationId: reservation.groupReservationId,
+            chargeType: `${order.outlet.name} POS ${order.orderNumber}`,
+            amount,
+            paidBy: "MASTER",
+            chargeDate: new Date(new Date().toISOString().slice(0, 10)),
+          },
+        });
+        await tx.groupReservation.update({ where: { id: reservation.groupReservationId }, data: { balance: { increment: amount } } });
+        await tx.posOrder.update({ where: { id: order.id }, data: { groupReservationId: reservation.groupReservationId } });
+      } else {
+        if (reservation.cashOnly) throw new AppError(400, "POS-015", "This reservation is marked cash-only");
+        const folio = reservation.folios.find((candidate) => candidate.status === FolioStatus.OPEN);
+        if (!folio) throw new AppError(400, "POS-016", "No open folio is available for this reservation");
+        await tx.folioLine.create({
+          data: {
+            folioId: folio.id,
+            lineType: FolioLineType.CHARGE,
+            description,
+            amount,
+            department,
+            taxRate: netAmount > 0 ? taxAmount / netAmount : 0,
+            netAmount,
+            vatAmount: taxAmount,
+            levyAmount: 0,
+            postedById: input.userId,
+            posOrderId: order.id,
+          },
+        });
+        await tx.posOrder.update({ where: { id: order.id }, data: { reservationId: reservation.id } });
+      }
 
       return tx.posOrder.findUniqueOrThrow({
         where: { id: order.id },
@@ -322,7 +371,7 @@ export async function payPosOrder(input: {
       action: "ORDER_ROOM_CHARGE",
       entityType: "PosOrder",
       entityId: order.id,
-      details: { roomNumber: input.roomNumber, amount },
+      details: { roomNumber: input.roomNumber, billTo: input.billTo ?? "ROOM", amount },
       ipAddress: input.ipAddress,
     });
 
@@ -366,6 +415,7 @@ export async function listPosOrders(status?: PosOrderStatus) {
     include: {
       items: { include: { menuItem: true } },
       outlet: true,
+      groupReservation: { select: { groupName: true, groupCode: true } },
     },
     orderBy: { createdAt: "desc" },
     take: 50,

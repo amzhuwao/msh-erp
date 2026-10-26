@@ -65,9 +65,10 @@ export function FolioPanel({ folioId, onClose }: { folioId: string; onClose: () 
     setPayAmt(""); load();
   }
 
-  function openDoc(kind: "invoice" | "receipt" | "quote") {
+  function openDoc(kind: "invoice" | "receipt" | "quote" | "proforma") {
     const base = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
-    window.open(`${base}/dashboard/documents/${folioId}?type=${kind}`, "_blank");
+    const source = kind === "proforma" ? "&source=folio" : "";
+    window.open(`${base}/dashboard/documents/${folioId}?type=${kind}${source}`, "_blank");
   }
 
   if (!folio) return <div className="p-8 text-slate-500">Loading folio…</div>;
@@ -91,6 +92,7 @@ export function FolioPanel({ folioId, onClose }: { folioId: string; onClose: () 
           </div>
           <div className="flex gap-2 justify-end mt-2">
             <button className="text-xs text-[hsl(var(--accent))]" onClick={() => openDoc("quote")}>Quote</button>
+            <button className="text-xs text-[hsl(var(--accent))]" onClick={() => openDoc("proforma")}>Pro forma invoice</button>
             <button className="text-xs text-[hsl(var(--accent))]" onClick={() => openDoc("invoice")}>Tax invoice</button>
             <button className="text-xs text-[hsl(var(--accent))]" onClick={() => openDoc("receipt")}>Receipt</button>
           </div>
@@ -118,8 +120,8 @@ export function FolioPanel({ folioId, onClose }: { folioId: string; onClose: () 
           {folio.taxSummary && (
             <div className="text-xs mb-3 space-y-0.5">
               <div className="flex justify-between"><span>Net</span><span>${folio.taxSummary.net.toFixed(2)}</span></div>
-              <div className="flex justify-between"><span>VAT 15%</span><span>${folio.taxSummary.vat.toFixed(2)}</span></div>
-              <div className="flex justify-between"><span>ZTA 2%</span><span>${folio.taxSummary.levy.toFixed(2)}</span></div>
+              <div className="flex justify-between"><span>VAT</span><span>${folio.taxSummary.vat.toFixed(2)}</span></div>
+              <div className="flex justify-between"><span>ZTA levy</span><span>${folio.taxSummary.levy.toFixed(2)}</span></div>
             </div>
           )}
           <div className="flex gap-2">

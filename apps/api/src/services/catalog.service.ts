@@ -109,6 +109,37 @@ export async function updateRoomType(id: string, input: {
   return roomType;
 }
 
+export async function deleteRoomType(id: string, userId: string) {
+  const roomType = await prisma.roomType.findUnique({
+    where: { id },
+    include: {
+      ratePlans: { include: { _count: { select: { reservations: true } } } },
+      _count: { select: { rooms: true, groupRooms: true, contracts: true } },
+    },
+  });
+  if (!roomType) throw new AppError(404, "CAT-002", "Room type not found");
+
+  const usedRatePlans = roomType.ratePlans.filter((plan) => plan._count.reservations > 0).length;
+  if (roomType._count.rooms > 0 || roomType._count.groupRooms > 0 || roomType._count.contracts > 0 || usedRatePlans > 0) {
+    const reasons = [
+      roomType._count.rooms > 0 ? `${roomType._count.rooms} room(s)` : "",
+      roomType._count.groupRooms > 0 ? `${roomType._count.groupRooms} group room allocation(s)` : "",
+      roomType._count.contracts > 0 ? `${roomType._count.contracts} negotiated contract(s)` : "",
+      usedRatePlans > 0 ? "reservation history" : "",
+    ].filter(Boolean).join(", ");
+    throw new AppError(409, "CAT-014", `Room type is in use by ${reasons}. Remove or reassign those records before deleting it.`);
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.ratePlan.deleteMany({ where: { roomTypeId: id } });
+    await tx.yieldRule.deleteMany({ where: { roomTypeId: id } });
+    await tx.seasonalRateAdjustment.deleteMany({ where: { roomTypeId: id } });
+    await tx.roomType.delete({ where: { id } });
+  });
+  await audit(userId, "Reservations", "ROOM_TYPE_DELETE", "RoomType", id, { code: roomType.code, name: roomType.name });
+  return { id };
+}
+
 export async function upsertRatePlan(input: {
   id?: string;
   code: string;
@@ -221,6 +252,31 @@ export async function updateRoom(id: string, input: {
   return room;
 }
 
+export async function deleteRoom(id: string, userId: string) {
+  const room = await prisma.room.findUnique({
+    where: { id },
+    include: { _count: { select: { reservations: true, groupRooms: true, assignments: true, cleaningLogs: true, maintenanceTickets: true } } },
+  });
+  if (!room) throw new AppError(404, "CAT-004", "Room not found");
+
+  const references = [
+    [room._count.reservations, "reservation(s)"],
+    [room._count.groupRooms, "group allocation(s)"],
+    [room._count.assignments, "housekeeping assignment(s)"],
+    [room._count.cleaningLogs, "cleaning log(s)"],
+    [room._count.maintenanceTickets, "maintenance ticket(s)"],
+  ] as const;
+  const inUse = references.filter(([count]) => count > 0);
+  if (inUse.length) {
+    const reasons = inUse.map(([count, label]) => `${count} ${label}`).join(", ");
+    throw new AppError(409, "CAT-015", `Room ${room.number} is in use by ${reasons}. Deactivate it instead, or remove/reassign those records before deleting it.`);
+  }
+
+  await prisma.room.delete({ where: { id } });
+  await audit(userId, "Reservations", "ROOM_DELETE", "Room", id, { number: room.number });
+  return { id };
+}
+
 // ─── Conference masters ─────────────────────────────────────────────────────
 
 export async function listVenuesAdmin() {
@@ -230,9 +286,9 @@ export async function listVenuesAdmin() {
 export async function createVenue(input: {
   name: string;
   locationDescription?: string;
-  maxCapacityBanquet: number;
-  maxCapacityCinema: number;
-  maxCapacityBoardroom: number;
+  maxCapacityChairsOnly: number;
+  maxCapacityTracers: number;
+  maxCapacityRoundTables: number;
   halfDayRate: number;
   fullDayRate: number;
   isActive?: boolean;
@@ -247,9 +303,9 @@ export async function createVenue(input: {
     data: {
       name,
       locationDescription: input.locationDescription?.trim(),
-      maxCapacityBanquet: input.maxCapacityBanquet,
-      maxCapacityCinema: input.maxCapacityCinema,
-      maxCapacityBoardroom: input.maxCapacityBoardroom,
+      maxCapacityChairsOnly: input.maxCapacityChairsOnly,
+      maxCapacityTracers: input.maxCapacityTracers,
+      maxCapacityRoundTables: input.maxCapacityRoundTables,
       halfDayRate: input.halfDayRate,
       fullDayRate: input.fullDayRate,
       isActive: input.isActive ?? true,
@@ -262,9 +318,9 @@ export async function createVenue(input: {
 export async function updateVenue(id: string, input: {
   name?: string;
   locationDescription?: string;
-  maxCapacityBanquet?: number;
-  maxCapacityCinema?: number;
-  maxCapacityBoardroom?: number;
+  maxCapacityChairsOnly?: number;
+  maxCapacityTracers?: number;
+  maxCapacityRoundTables?: number;
   halfDayRate?: number;
   fullDayRate?: number;
   isActive?: boolean;
@@ -285,9 +341,9 @@ export async function updateVenue(id: string, input: {
     data: {
       name,
       locationDescription: input.locationDescription?.trim(),
-      maxCapacityBanquet: input.maxCapacityBanquet,
-      maxCapacityCinema: input.maxCapacityCinema,
-      maxCapacityBoardroom: input.maxCapacityBoardroom,
+      maxCapacityChairsOnly: input.maxCapacityChairsOnly,
+      maxCapacityTracers: input.maxCapacityTracers,
+      maxCapacityRoundTables: input.maxCapacityRoundTables,
       halfDayRate: input.halfDayRate,
       fullDayRate: input.fullDayRate,
       isActive: input.isActive,
@@ -366,6 +422,18 @@ export async function updatePackage(id: string, input: {
   return pkg;
 }
 
+export async function deletePackage(id: string, userId: string) {
+  const pkg = await prisma.conferencePackage.findUnique({ where: { id } });
+  if (!pkg) throw new AppError(404, "CAT-011", "Package not found");
+  const bookingCount = await prisma.conferenceBooking.count({ where: { packageId: id } });
+  if (bookingCount > 0) {
+    throw new AppError(409, "CAT-014", "This package is used by conference bookings and cannot be deleted. Deactivate it instead.");
+  }
+  await prisma.conferencePackage.delete({ where: { id } });
+  await audit(userId, "Conference", "PACKAGE_DELETE", "ConferencePackage", id, { name: pkg.name });
+  return { id };
+}
+
 export async function listResourcesAdmin() {
   return prisma.conferenceResource.findMany({ orderBy: { name: "asc" } });
 }
@@ -411,6 +479,18 @@ export async function updateResource(id: string, input: {
   return resource;
 }
 
+export async function deleteResource(id: string, userId: string) {
+  const resource = await prisma.conferenceResource.findUnique({ where: { id } });
+  if (!resource) throw new AppError(404, "CAT-012", "Resource not found");
+  const allocationCount = await prisma.conferenceResourceAllocation.count({ where: { resourceId: id } });
+  if (allocationCount > 0) {
+    throw new AppError(409, "CAT-015", "This resource has conference allocations and cannot be deleted. Remove its allocations or keep it for history.");
+  }
+  await prisma.conferenceResource.delete({ where: { id } });
+  await audit(userId, "Conference", "RESOURCE_DELETE", "ConferenceResource", id, { name: resource.name });
+  return { id };
+}
+
 // ─── POS menu / meals ───────────────────────────────────────────────────────
 
 export async function listOutletsAdmin() {
@@ -443,6 +523,22 @@ export async function updateOutlet(id: string, input: { name?: string; isActive?
   });
   await audit(input.userId, "POS", "OUTLET_UPDATE", "PosOutlet", id);
   return outlet;
+}
+
+export async function deleteOutlet(id: string, userId: string) {
+  const outlet = await prisma.posOutlet.findUnique({ where: { id } });
+  if (!outlet) throw new AppError(404, "CAT-021", "Outlet not found");
+  const [menuItemCount, orderCount, sessionCount] = await Promise.all([
+    prisma.menuItem.count({ where: { outletId: id } }),
+    prisma.posOrder.count({ where: { outletId: id } }),
+    prisma.posSession.count({ where: { outletId: id } }),
+  ]);
+  if (menuItemCount + orderCount + sessionCount > 0) {
+    throw new AppError(409, "CAT-024", "This outlet contains menu items or has order/session history and cannot be deleted. Deactivate it instead.");
+  }
+  await prisma.posOutlet.delete({ where: { id } });
+  await audit(userId, "POS", "OUTLET_DELETE", "PosOutlet", id, { name: outlet.name });
+  return { id };
 }
 
 export async function listMenuItemsAdmin(outletId?: string) {
@@ -524,6 +620,21 @@ export async function updateMenuItem(id: string, input: {
   return item;
 }
 
+export async function deleteMenuItem(id: string, userId: string) {
+  const item = await prisma.menuItem.findUnique({ where: { id } });
+  if (!item) throw new AppError(404, "CAT-023", "Menu item not found");
+  const [orderItemCount, recipeCount] = await Promise.all([
+    prisma.posOrderItem.count({ where: { menuItemId: id } }),
+    prisma.recipeComponent.count({ where: { menuItemId: id } }),
+  ]);
+  if (orderItemCount + recipeCount > 0) {
+    throw new AppError(409, "CAT-025", "This menu item is referenced by orders or an inventory recipe and cannot be deleted. Deactivate it instead.");
+  }
+  await prisma.menuItem.delete({ where: { id } });
+  await audit(userId, "POS", "MENU_ITEM_DELETE", "MenuItem", id, { name: item.name, code: item.code });
+  return { id };
+}
+
 // ─── Guest service / meal catalog ───────────────────────────────────────────
 
 export async function listServiceCatalogAdmin() {
@@ -582,4 +693,16 @@ export async function updateServiceCatalogItem(id: string, input: {
   });
   await audit(input.userId, "GuestServices", "CATALOG_UPDATE", "ServiceCatalogItem", id, input);
   return item;
+}
+
+export async function deleteServiceCatalogItem(id: string, userId: string) {
+  const item = await prisma.serviceCatalogItem.findUnique({ where: { id } });
+  if (!item) throw new AppError(404, "CAT-031", "Catalog item not found");
+  const orderCount = await prisma.guestServiceOrder.count({ where: { catalogItemId: id } });
+  if (orderCount > 0) {
+    throw new AppError(409, "CAT-032", "This catalog item is referenced by guest service orders and cannot be deleted. Deactivate it instead.");
+  }
+  await prisma.serviceCatalogItem.delete({ where: { id } });
+  await audit(userId, "GuestServices", "CATALOG_DELETE", "ServiceCatalogItem", id, { name: item.name, code: item.code });
+  return { id };
 }

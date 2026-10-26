@@ -31,6 +31,8 @@ interface PosOrder {
   totalAmount: string;
   paymentMethod: string | null;
   roomNumber: string | null;
+  walkInGuestName?: string | null;
+  groupReservation?: { groupName: string; groupCode: string } | null;
   outlet: { name: string };
 }
 
@@ -40,7 +42,13 @@ export default function PosPage() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [orders, setOrders] = useState<PosOrder[]>([]);
   const [roomNumber, setRoomNumber] = useState("");
+  const [billTo, setBillTo] = useState<"ROOM" | "GROUP">("ROOM");
+  const [walkInGuestName, setWalkInGuestName] = useState("");
+  const [walkInGuestPhone, setWalkInGuestPhone] = useState("");
+  const [chargeTarget, setChargeTarget] = useState<{ guestName: string; groupName?: string; groupCode?: string } | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<"CASH" | "CARD" | "BANK_TRANSFER" | "ECOCASH" | "ONEMONEY" | "ROOM_CHARGE">("CASH");
+  const [vatRate, setVatRate] = useState(0.15);
+  const [orderBilling, setOrderBilling] = useState<"PAY_NOW" | "ROOM" | "GROUP">("PAY_NOW");
   const [lastOrderId, setLastOrderId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [payInfo, setPayInfo] = useState<{
@@ -61,16 +69,21 @@ export default function PosPage() {
 
   useEffect(() => {
     loadMenu();
+    apiFetch<{ vatRatePercent?: string | number }>("/api/property")
+      .then((property) => setVatRate(Number(property.vatRatePercent ?? 15) / 100))
+      .catch(() => undefined);
     apiFetch<typeof payInfo>("/api/property/payment-instructions").then(setPayInfo).catch(() => undefined);
   }, []);
 
   const outlet = outlets.find((o) => o.id === selectedOutlet);
   const categories = outlet
-    ? [...new Set(outlet.menuItems.map((m) => m.category))]
+    ? [...new Set(outlet.menuItems.map((m) => m.category))].sort((a, b) =>
+        a === "Breakfast" ? -1 : b === "Breakfast" ? 1 : 0,
+      )
     : [];
 
   const subTotal = cart.reduce((s, c) => s + Number(c.menuItem.price) * c.quantity, 0);
-  const taxAmount = cart.reduce((s, c) => s + Number(c.menuItem.price) * c.quantity * 0.15, 0);
+  const taxAmount = cart.reduce((s, c) => s + Number(c.menuItem.price) * c.quantity * vatRate, 0);
   const total = subTotal + taxAmount;
 
   function addToCart(item: MenuItem) {
@@ -87,17 +100,43 @@ export default function PosPage() {
 
   async function submitOrder() {
     if (cart.length === 0 || !selectedOutlet) return;
+    const postsToRoom = orderBilling === "ROOM" || orderBilling === "GROUP";
+    if (postsToRoom && !chargeTarget) {
+      alert("Validate the checked-in room before creating this order.");
+      return;
+    }
     setLoading(true);
     try {
       const order = await apiFetch<{ id: string }>("/api/pos/orders", {
         method: "POST",
         body: JSON.stringify({
           outletId: selectedOutlet,
+          walkInGuestName: walkInGuestName.trim() || undefined,
+          walkInGuestPhone: walkInGuestPhone.trim() || undefined,
           items: cart.map((c) => ({ menuItemId: c.menuItem.id, quantity: c.quantity })),
         }),
       });
       setLastOrderId(order.id);
       setCart([]);
+      if (postsToRoom) {
+        setPaymentMethod("ROOM_CHARGE");
+        try {
+          await apiFetch(`/api/pos/orders/${order.id}/pay`, {
+            method: "POST",
+            body: JSON.stringify({ paymentMethod: "ROOM_CHARGE", roomNumber, billTo: orderBilling }),
+          });
+          setLastOrderId(null);
+          setRoomNumber("");
+          setChargeTarget(null);
+          setOrderBilling("PAY_NOW");
+          loadMenu();
+          alert(orderBilling === "GROUP" ? "Order posted to group account" : "Order posted to guest folio");
+        } catch (err) {
+          alert(err instanceof Error ? `Order created, but room posting failed: ${err.message}` : "Order created, but room posting failed");
+        }
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Could not create order");
     } finally {
       setLoading(false);
     }
@@ -112,16 +151,31 @@ export default function PosPage() {
         body: JSON.stringify({
           paymentMethod,
           roomNumber: paymentMethod === "ROOM_CHARGE" ? roomNumber : undefined,
+          billTo: paymentMethod === "ROOM_CHARGE" ? billTo : undefined,
         }),
       });
       setLastOrderId(null);
       setRoomNumber("");
+      setChargeTarget(null);
       loadMenu();
       alert("Payment processed");
     } catch (err) {
       alert(err instanceof Error ? err.message : "Payment failed");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function validateChargeTarget() {
+    setChargeTarget(null);
+    try {
+      const target = await apiFetch<{ guestName: string; groupName?: string; groupCode?: string }>("/api/pos/room-charge-validate", {
+        method: "POST",
+        body: JSON.stringify({ roomNumber: roomNumber.trim(), billTo }),
+      });
+      setChargeTarget(target);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Could not validate room");
     }
   }
 
@@ -182,17 +236,58 @@ export default function PosPage() {
           </ul>
           {cart.length > 0 && (
             <>
+              <div className="border-t pt-3 mt-2 space-y-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Walk-in guest (optional)</p>
+                <input aria-label="Walk-in guest name" placeholder="Guest name" className="w-full border rounded-lg px-3 py-2 text-sm" value={walkInGuestName} onChange={(e) => setWalkInGuestName(e.target.value)} />
+                <input aria-label="Walk-in guest contact number" placeholder="Contact number" className="w-full border rounded-lg px-3 py-2 text-sm" value={walkInGuestPhone} onChange={(e) => setWalkInGuestPhone(e.target.value)} />
+              </div>
+              <div className="border-t pt-3 mt-3 space-y-2">
+                <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500" htmlFor="order-billing">Charge this order to</label>
+                <select
+                  id="order-billing"
+                  className="w-full border rounded-lg px-3 py-2 text-sm"
+                  value={orderBilling}
+                  onChange={(e) => {
+                    const value = e.target.value as typeof orderBilling;
+                    setOrderBilling(value);
+                    if (value === "ROOM" || value === "GROUP") setBillTo(value);
+                    setChargeTarget(null);
+                  }}
+                >
+                  <option value="PAY_NOW">Pay at POS</option>
+                  <option value="ROOM">Checked-in guest room folio</option>
+                  <option value="GROUP">Group account via member room</option>
+                </select>
+                {(orderBilling === "ROOM" || orderBilling === "GROUP") && (
+                  <>
+                    <label className="block text-xs text-slate-600" htmlFor="new-order-room">
+                      {orderBilling === "GROUP" ? "Checked-in group member room" : "Checked-in guest room"}
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        id="new-order-room"
+                        placeholder="Room number"
+                        className="min-w-0 flex-1 border rounded-lg px-3 py-2 text-sm"
+                        value={roomNumber}
+                        onChange={(e) => { setRoomNumber(e.target.value); setChargeTarget(null); }}
+                      />
+                      <button type="button" onClick={validateChargeTarget} disabled={!roomNumber.trim() || loading} className="border rounded-lg px-3 py-2 text-sm disabled:opacity-50">Validate</button>
+                    </div>
+                    {chargeTarget && <p className="text-xs text-emerald-700">{orderBilling === "GROUP" ? `Group ${chargeTarget.groupName} (${chargeTarget.groupCode}) · member: ${chargeTarget.guestName}` : `Guest: ${chargeTarget.guestName}`}</p>}
+                  </>
+                )}
+              </div>
               <div className="border-t pt-2 text-sm space-y-1">
                 <div className="flex justify-between"><span>Subtotal</span><span>${subTotal.toFixed(2)}</span></div>
-                <div className="flex justify-between text-slate-500"><span>VAT 15%</span><span>${taxAmount.toFixed(2)}</span></div>
+                <div className="flex justify-between text-slate-500"><span>VAT {(vatRate * 100).toFixed(2).replace(/\.00$/, "")}%</span><span>${taxAmount.toFixed(2)}</span></div>
                 <div className="flex justify-between font-semibold text-[hsl(var(--primary))]"><span>Total</span><span>${total.toFixed(2)}</span></div>
               </div>
               <button
                 onClick={submitOrder}
-                disabled={loading}
+                disabled={loading || ((orderBilling === "ROOM" || orderBilling === "GROUP") && !chargeTarget)}
                 className="w-full mt-4 bg-[hsl(var(--primary))] text-white py-2 rounded-lg text-sm disabled:opacity-50"
               >
-                Create Order
+                {orderBilling === "ROOM" ? "Create & post to guest folio" : orderBilling === "GROUP" ? "Create & post to group account" : "Create Order"}
               </button>
             </>
           )}
@@ -213,12 +308,19 @@ export default function PosPage() {
                 <option value="ROOM_CHARGE">Room Charge</option>
               </select>
               {paymentMethod === "ROOM_CHARGE" && (
-                <input
-                  placeholder="Room number"
-                  className="w-full border rounded-lg px-3 py-2 text-sm mb-2"
-                  value={roomNumber}
-                  onChange={(e) => setRoomNumber(e.target.value)}
-                />
+                <div className="space-y-2 mb-2">
+                  <label className="block text-xs text-slate-600" htmlFor="pos-bill-to">Post bill to</label>
+                  <select id="pos-bill-to" className="w-full border rounded-lg px-3 py-2 text-sm" value={billTo} onChange={(e) => { setBillTo(e.target.value as typeof billTo); setChargeTarget(null); }}>
+                    <option value="ROOM">Checked-in guest room folio</option>
+                    <option value="GROUP">Group account (use a checked-in member room)</option>
+                  </select>
+                  <label className="block text-xs text-slate-600" htmlFor="pos-charge-room">{billTo === "GROUP" ? "Checked-in group member room" : "Checked-in guest room"}</label>
+                  <div className="flex gap-2">
+                    <input id="pos-charge-room" placeholder="Room number" className="min-w-0 flex-1 border rounded-lg px-3 py-2 text-sm" value={roomNumber} onChange={(e) => { setRoomNumber(e.target.value); setChargeTarget(null); }} />
+                    <button type="button" onClick={validateChargeTarget} disabled={!roomNumber.trim() || loading} className="border rounded-lg px-3 py-2 text-sm disabled:opacity-50">Validate</button>
+                  </div>
+                  {chargeTarget && <p className="text-xs text-emerald-700">{billTo === "GROUP" ? `Group ${chargeTarget.groupName} (${chargeTarget.groupCode}) · member: ${chargeTarget.guestName}` : `Guest: ${chargeTarget.guestName}`}</p>}
+                </div>
               )}
               {payInfo && (paymentMethod === "BANK_TRANSFER" || paymentMethod === "ECOCASH" || paymentMethod === "ONEMONEY") && (
                 <div className="text-xs bg-amber-50 border border-amber-100 rounded p-2 mb-2">
@@ -250,6 +352,8 @@ export default function PosPage() {
               <span className="text-slate-500">
                 ${Number(o.totalAmount).toFixed(2)} · {o.status}
                 {o.roomNumber && ` · Room ${o.roomNumber}`}
+                {o.groupReservation && ` · Group ${o.groupReservation.groupName}`}
+                {o.walkInGuestName && ` · ${o.walkInGuestName}`}
               </span>
             </li>
           ))}

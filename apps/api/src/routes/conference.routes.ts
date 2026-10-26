@@ -5,6 +5,7 @@ import { asyncHandler, validateBody, validateQuery } from "../middleware/http.js
 import { paramId } from "../lib/params.js";
 import {
   allocateResource,
+  buildConferenceProformaDocument,
   checkVenueAvailability,
   completeBooking,
   confirmBooking,
@@ -31,9 +32,9 @@ conferenceRouter.get("/venues", authorize("Conference", "VIEW"), asyncHandler(as
 const venueBodySchema = z.object({
   name: z.string().trim().min(1),
   locationDescription: z.string().nullable().optional(),
-  maxCapacityBanquet: z.number().int().min(1),
-  maxCapacityCinema: z.number().int().min(1),
-  maxCapacityBoardroom: z.number().int().min(1),
+  maxCapacityChairsOnly: z.number().int().min(1),
+  maxCapacityTracers: z.number().int().min(1),
+  maxCapacityRoundTables: z.number().int().min(1),
   halfDayRate: z.number().finite().min(0),
   fullDayRate: z.number().finite().min(0),
 });
@@ -67,6 +68,10 @@ conferenceRouter.get("/resources", authorize("Conference", "VIEW"), asyncHandler
 
 conferenceRouter.get("/bookings", authorize("Conference", "VIEW"), asyncHandler(async (_req, res) => {
   res.json({ items: await listBookings() });
+}));
+
+conferenceRouter.get("/bookings/:id/proforma", authorize("Conference", "VIEW"), asyncHandler(async (req, res) => {
+  res.json(await buildConferenceProformaDocument(paramId(req.params.id)));
 }));
 
 conferenceRouter.get("/in-house-reservations", authorize("Conference", "VIEW"), asyncHandler(async (_req, res) => {

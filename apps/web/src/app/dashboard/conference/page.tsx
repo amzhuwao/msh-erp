@@ -6,22 +6,33 @@ import { PageHeader } from "@/components/ui/PageHeader";
 
 interface Venue {
   id: string; name: string; locationDescription: string | null; halfDayRate: string; fullDayRate: string;
-  maxCapacityBanquet: number; maxCapacityCinema: number; maxCapacityBoardroom: number; isActive: boolean;
+  maxCapacityChairsOnly: number; maxCapacityTracers: number; maxCapacityRoundTables: number; isActive: boolean;
   _count?: { bookings: number };
 }
 interface VenueForm {
-  name: string; locationDescription: string; maxCapacityBanquet: string; maxCapacityCinema: string;
-  maxCapacityBoardroom: string; halfDayRate: string; fullDayRate: string; isActive: boolean;
+  name: string; locationDescription: string; maxCapacityChairsOnly: string; maxCapacityTracers: string;
+  maxCapacityRoundTables: string; halfDayRate: string; fullDayRate: string; isActive: boolean;
 }
 interface Pkg { id: string; name: string; ratePerPax: string; venueId: string }
 interface Resource { id: string; name: string; totalInventoryCount: number; dailyRentalRate: string }
 interface InHouseReservation { id: string; reservationNumber: string; guest: { firstName: string; lastName: string }; room: { number: string } | null }
 interface Booking {
   id: string; bookingNumber: string; contactName: string; status: string;
-  startTimestamp: string; endTimestamp: string; estimatedPax: number; totalAmount: string;
+  startTimestamp: string; endTimestamp: string; estimatedPax: number; actualPax: number | null;
+  setupStyle: string; baseVenueCost: string; depositRequired: string; depositPaid: string; totalAmount: string;
   venue: { name: string };
+  package: { name: string; ratePerPax: string } | null;
+  company: { companyName: string } | null;
   reservation: InHouseReservation | null;
+  resources: { id: string; quantityAllocated: number; chargedRate: string; subtotal: string; resource: { name: string } }[];
   folioChargeLine: { id: string; amount: string } | null;
+}
+
+type BookingView = "reserved" | "past" | "all";
+
+function openConferenceProforma(bookingId: string) {
+  const base = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+  window.open(`${base}/dashboard/documents/${bookingId}?type=proforma&source=conference`, "_blank");
 }
 
 export default function ConferencePage() {
@@ -29,10 +40,12 @@ export default function ConferencePage() {
   const [packages, setPackages] = useState<Pkg[]>([]);
   const [resources, setResources] = useState<Resource[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [bookingView, setBookingView] = useState<BookingView>("reserved");
+  const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
   const [reservations, setReservations] = useState<InHouseReservation[]>([]);
   const [venueEditing, setVenueEditing] = useState<Venue | "new" | null>(null);
   const [venueSelected, setVenueSelected] = useState<Venue | null>(null);
-  const [venueForm, setVenueForm] = useState<VenueForm>({ name: "", locationDescription: "", maxCapacityBanquet: "20", maxCapacityCinema: "20", maxCapacityBoardroom: "20", halfDayRate: "0", fullDayRate: "0", isActive: true });
+  const [venueForm, setVenueForm] = useState<VenueForm>({ name: "", locationDescription: "", maxCapacityChairsOnly: "20", maxCapacityTracers: "20", maxCapacityRoundTables: "20", halfDayRate: "0", fullDayRate: "0", isActive: true });
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [savingVenue, setSavingVenue] = useState(false);
@@ -57,12 +70,12 @@ export default function ConferencePage() {
 
   function startNewVenue() {
     setVenueEditing("new"); setVenueSelected(null); setMessage(""); setError("");
-    setVenueForm({ name: "", locationDescription: "", maxCapacityBanquet: "20", maxCapacityCinema: "20", maxCapacityBoardroom: "20", halfDayRate: "0", fullDayRate: "0", isActive: true });
+    setVenueForm({ name: "", locationDescription: "", maxCapacityChairsOnly: "20", maxCapacityTracers: "20", maxCapacityRoundTables: "20", halfDayRate: "0", fullDayRate: "0", isActive: true });
   }
 
   function editVenue(venue: Venue) {
     setVenueEditing(venue); setVenueSelected(null); setMessage(""); setError("");
-    setVenueForm({ name: venue.name, locationDescription: venue.locationDescription ?? "", maxCapacityBanquet: String(venue.maxCapacityBanquet), maxCapacityCinema: String(venue.maxCapacityCinema), maxCapacityBoardroom: String(venue.maxCapacityBoardroom), halfDayRate: String(Number(venue.halfDayRate)), fullDayRate: String(Number(venue.fullDayRate)), isActive: venue.isActive });
+    setVenueForm({ name: venue.name, locationDescription: venue.locationDescription ?? "", maxCapacityChairsOnly: String(venue.maxCapacityChairsOnly), maxCapacityTracers: String(venue.maxCapacityTracers), maxCapacityRoundTables: String(venue.maxCapacityRoundTables), halfDayRate: String(Number(venue.halfDayRate)), fullDayRate: String(Number(venue.fullDayRate)), isActive: venue.isActive });
   }
 
   async function viewVenue(id: string) {
@@ -75,9 +88,9 @@ export default function ConferencePage() {
     const payload = {
       name: venueForm.name,
       locationDescription: venueForm.locationDescription || null,
-      maxCapacityBanquet: Number(venueForm.maxCapacityBanquet),
-      maxCapacityCinema: Number(venueForm.maxCapacityCinema),
-      maxCapacityBoardroom: Number(venueForm.maxCapacityBoardroom),
+      maxCapacityChairsOnly: Number(venueForm.maxCapacityChairsOnly),
+      maxCapacityTracers: Number(venueForm.maxCapacityTracers),
+      maxCapacityRoundTables: Number(venueForm.maxCapacityRoundTables),
       halfDayRate: Number(venueForm.halfDayRate),
       fullDayRate: Number(venueForm.fullDayRate),
       ...(venueEditing !== "new" ? { isActive: venueForm.isActive } : {}),
@@ -146,6 +159,19 @@ export default function ConferencePage() {
     ? Number(bookingDurationHours <= 5 ? selectedVenue.halfDayRate : selectedVenue.fullDayRate)
     : null;
   const statusColor: Record<string, string> = { TENTATIVE: "bg-amber-100 text-amber-800", CONFIRMED: "bg-emerald-100 text-emerald-800", IN_PROGRESS: "bg-blue-100 text-blue-800", COMPLETED: "bg-slate-100 text-slate-800" };
+  const now = Date.now();
+  const visibleBookings = bookings.filter((booking) => {
+    const past = booking.status === "COMPLETED" || new Date(booking.endTimestamp).getTime() < now;
+    if (bookingView === "past") return past;
+    if (bookingView === "reserved") return !past && booking.status !== "CANCELLED";
+    return true;
+  });
+  const reservedCount = bookings.filter((booking) => booking.status !== "COMPLETED" && booking.status !== "CANCELLED" && new Date(booking.endTimestamp).getTime() >= now).length;
+  const pastCount = bookings.filter((booking) => booking.status === "COMPLETED" || new Date(booking.endTimestamp).getTime() < now).length;
+
+  function formatBookingDateTime(value: string) {
+    return new Date(value).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" });
+  }
 
   return (
     <div className="p-6">
@@ -158,9 +184,9 @@ export default function ConferencePage() {
           <div className="grid md:grid-cols-3 gap-3">
             <label className="block text-sm">Venue name *<input required className="msh-input mt-1" value={venueForm.name} onChange={(event) => setVenueForm({ ...venueForm, name: event.target.value })} /></label>
             <label className="block text-sm md:col-span-2">Location / description<input className="msh-input mt-1" value={venueForm.locationDescription} onChange={(event) => setVenueForm({ ...venueForm, locationDescription: event.target.value })} /></label>
-            <label className="block text-sm">Banquet capacity *<input required min="1" type="number" className="msh-input mt-1" value={venueForm.maxCapacityBanquet} onChange={(event) => setVenueForm({ ...venueForm, maxCapacityBanquet: event.target.value })} /></label>
-            <label className="block text-sm">Cinema capacity *<input required min="1" type="number" className="msh-input mt-1" value={venueForm.maxCapacityCinema} onChange={(event) => setVenueForm({ ...venueForm, maxCapacityCinema: event.target.value })} /></label>
-            <label className="block text-sm">Boardroom capacity *<input required min="1" type="number" className="msh-input mt-1" value={venueForm.maxCapacityBoardroom} onChange={(event) => setVenueForm({ ...venueForm, maxCapacityBoardroom: event.target.value })} /></label>
+            <label className="block text-sm">Chairs Only capacity *<input required min="1" type="number" className="msh-input mt-1" value={venueForm.maxCapacityChairsOnly} onChange={(event) => setVenueForm({ ...venueForm, maxCapacityChairsOnly: event.target.value })} /></label>
+            <label className="block text-sm">Tracers capacity *<input required min="1" type="number" className="msh-input mt-1" value={venueForm.maxCapacityTracers} onChange={(event) => setVenueForm({ ...venueForm, maxCapacityTracers: event.target.value })} /></label>
+            <label className="block text-sm">Round Tables capacity *<input required min="1" type="number" className="msh-input mt-1" value={venueForm.maxCapacityRoundTables} onChange={(event) => setVenueForm({ ...venueForm, maxCapacityRoundTables: event.target.value })} /></label>
             <label className="block text-sm">Half-day rate *<input required min="0" step="0.01" type="number" className="msh-input mt-1" value={venueForm.halfDayRate} onChange={(event) => setVenueForm({ ...venueForm, halfDayRate: event.target.value })} /></label>
             <label className="block text-sm">Full-day rate *<input required min="0" step="0.01" type="number" className="msh-input mt-1" value={venueForm.fullDayRate} onChange={(event) => setVenueForm({ ...venueForm, fullDayRate: event.target.value })} /></label>
             {venueEditing !== "new" && <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={venueForm.isActive} onChange={(event) => setVenueForm({ ...venueForm, isActive: event.target.checked })} /> Active and available for new bookings</label>}
@@ -171,7 +197,7 @@ export default function ConferencePage() {
           {venues.map((venue) => <article key={venue.id} className="rounded-lg border p-4">
             <div className="flex items-start justify-between gap-2"><h3 className="font-semibold">{venue.name}</h3><span className={`msh-badge ${venue.isActive ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-600"}`}>{venue.isActive ? "Active" : "Archived"}</span></div>
             <p className="mt-1 text-sm text-slate-500">{venue.locationDescription || "No location description"}</p>
-            <p className="mt-3 text-xs">Banquet {venue.maxCapacityBanquet} · Cinema {venue.maxCapacityCinema} · Boardroom {venue.maxCapacityBoardroom}</p>
+            <p className="mt-3 text-xs">Chairs Only {venue.maxCapacityChairsOnly} · Tracers {venue.maxCapacityTracers} · Round Tables {venue.maxCapacityRoundTables}</p>
             <p className="text-xs text-slate-600">Half day ${Number(venue.halfDayRate).toFixed(2)} · Full day ${Number(venue.fullDayRate).toFixed(2)}</p>
             <div className="mt-3 flex flex-wrap gap-2"><button type="button" className="msh-btn msh-btn-outline text-xs" onClick={() => void viewVenue(venue.id)}>View</button>{venueActions.edit && <button type="button" className="msh-btn msh-btn-outline text-xs" onClick={() => editVenue(venue)}>Edit</button>}{venueActions.remove && <button type="button" className="msh-btn msh-btn-outline text-xs text-red-700" onClick={() => void removeVenue(venue)}>Delete / archive</button>}</div>
           </article>)}
@@ -223,26 +249,84 @@ export default function ConferencePage() {
         </form>
       </section>
       <section className="msh-card overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-[hsl(var(--muted))] text-left text-[hsl(var(--muted-foreground))]">
-            <tr><th className="p-3">Number</th><th className="p-3">Venue</th><th className="p-3">Contact</th><th className="p-3">Guest / room</th><th className="p-3">When</th><th className="p-3">Total</th><th className="p-3">Status</th><th className="p-3" /></tr>
-          </thead>
-          <tbody>
-            {bookings.map((b) => (
-              <tr key={b.id} className="border-t">
-                <td className="p-3 font-mono text-xs">{b.bookingNumber}</td>
-                <td className="p-3">{b.venue.name}</td>
-                <td className="p-3">{b.contactName}</td>
-                <td className="p-3">{b.reservation ? `${b.reservation.guest.firstName} ${b.reservation.guest.lastName} · ${b.reservation.room?.number ?? "—"}` : "Not linked"}</td>
-                <td className="p-3 text-xs">{b.startTimestamp.slice(0, 16).replace("T", " ")}</td>
-                <td className="p-3">${Number(b.totalAmount).toFixed(2)}</td>
-                <td className="p-3"><span className={`msh-badge ${statusColor[b.status] ?? "bg-[hsl(var(--muted))]"}`}>{b.status}</span></td>
-                <td className="p-3">{b.status === "TENTATIVE" && <button className="text-xs text-[hsl(var(--accent))]" onClick={() => confirm(b.id)}>Confirm</button>}{["CONFIRMED", "IN_PROGRESS"].includes(b.status) && <button className="text-xs text-[hsl(var(--accent))]" onClick={() => complete(b.id)}>Complete & bill</button>}{b.folioChargeLine && <span className="text-xs text-emerald-700">Billed to folio</span>}</td>
-              </tr>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b p-4">
+          <div>
+            <h2 className="font-semibold">Conference bookings</h2>
+            <p className="text-xs text-slate-500">Browse reserved events and review completed conference details.</p>
+          </div>
+          <div className="flex gap-1 rounded-lg bg-[hsl(var(--muted))] p-1" role="tablist" aria-label="Conference booking view">
+            {([
+              ["reserved", `Reserved (${reservedCount})`],
+              ["past", `Past (${pastCount})`],
+              ["all", "All bookings"],
+            ] as [BookingView, string][]).map(([view, label]) => (
+              <button key={view} type="button" role="tab" aria-selected={bookingView === view} className={`rounded-md px-3 py-1.5 text-xs ${bookingView === view ? "bg-white font-medium shadow-sm" : "text-slate-600"}`} onClick={() => setBookingView(view)}>{label}</button>
             ))}
-          </tbody>
-        </table>
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-[hsl(var(--muted))] text-left text-[hsl(var(--muted-foreground))]">
+              <tr><th className="p-3">Number</th><th className="p-3">Venue</th><th className="p-3">Contact</th><th className="p-3">Guest / room</th><th className="p-3">When</th><th className="p-3">Total</th><th className="p-3">Status</th><th className="p-3" /></tr>
+            </thead>
+            <tbody>
+              {visibleBookings.map((b) => (
+                <tr key={b.id} className="border-t">
+                  <td className="p-3 font-mono text-xs">{b.bookingNumber}</td>
+                  <td className="p-3">{b.venue.name}</td>
+                  <td className="p-3">{b.contactName}</td>
+                  <td className="p-3">{b.reservation ? `${b.reservation.guest.firstName} ${b.reservation.guest.lastName} · ${b.reservation.room?.number ?? "—"}` : "Not linked"}</td>
+                  <td className="p-3 text-xs">{formatBookingDateTime(b.startTimestamp)}</td>
+                  <td className="p-3">${Number(b.totalAmount).toFixed(2)}</td>
+                  <td className="p-3"><span className={`msh-badge ${statusColor[b.status] ?? "bg-[hsl(var(--muted))]"}`}>{b.status}</span></td>
+                  <td className="p-3"><div className="flex flex-wrap gap-2"><button type="button" className="text-xs text-[hsl(var(--accent))]" onClick={() => setSelectedBooking(b)}>View details</button>{["TENTATIVE", "CONFIRMED", "IN_PROGRESS"].includes(b.status) && <button type="button" className="text-xs text-[hsl(var(--accent))]" onClick={() => openConferenceProforma(b.id)}>Pro forma</button>}{b.status === "TENTATIVE" && <button className="text-xs text-[hsl(var(--accent))]" onClick={() => confirm(b.id)}>Confirm</button>}{["CONFIRMED", "IN_PROGRESS"].includes(b.status) && <button className="text-xs text-[hsl(var(--accent))]" onClick={() => complete(b.id)}>Complete & bill</button>}{b.folioChargeLine && <span className="text-xs text-emerald-700">Billed to folio</span>}</div></td>
+                </tr>
+              ))}
+              {visibleBookings.length === 0 && <tr><td colSpan={8} className="p-8 text-center text-sm text-slate-500">{bookingView === "past" ? "No past conference bookings found." : bookingView === "reserved" ? "No reserved or upcoming conference bookings found." : "No conference bookings found."}</td></tr>}
+            </tbody>
+          </table>
+        </div>
       </section>
+      {selectedBooking && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setSelectedBooking(null)}>
+          <section role="dialog" aria-modal="true" aria-labelledby="conference-booking-details-title" className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-5 shadow-xl" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-start justify-between gap-4 border-b pb-4">
+              <div>
+                <p className="text-xs uppercase tracking-wide text-slate-500">Conference booking</p>
+                <h2 id="conference-booking-details-title" className="text-xl font-semibold">{selectedBooking.bookingNumber}</h2>
+                <p className="mt-1 text-sm text-slate-600">{selectedBooking.venue.name} · {formatBookingDateTime(selectedBooking.startTimestamp)}</p>
+              </div>
+              <button type="button" className="msh-btn msh-btn-outline text-xs" onClick={() => setSelectedBooking(null)}>Close</button>
+            </div>
+            <div className="mt-4 grid gap-4 sm:grid-cols-2 text-sm">
+              <div className="space-y-2">
+                <h3 className="font-semibold">Event</h3>
+                <p><span className="text-slate-500">End:</span> {formatBookingDateTime(selectedBooking.endTimestamp)}</p>
+                <p><span className="text-slate-500">Status:</span> {selectedBooking.status}</p>
+                <p><span className="text-slate-500">Setup:</span> {selectedBooking.setupStyle}</p>
+                <p><span className="text-slate-500">Attendees:</span> {selectedBooking.actualPax ?? selectedBooking.estimatedPax}{selectedBooking.actualPax === null ? " estimated" : " actual"}</p>
+                <p><span className="text-slate-500">Contact:</span> {selectedBooking.contactName}</p>
+                {selectedBooking.company && <p><span className="text-slate-500">Organisation:</span> {selectedBooking.company.companyName}</p>}
+              </div>
+              <div className="space-y-2">
+                <h3 className="font-semibold">Charges & payment</h3>
+                <p><span className="text-slate-500">Venue charge:</span> ${Number(selectedBooking.baseVenueCost).toFixed(2)}</p>
+                {selectedBooking.package && <p><span className="text-slate-500">Package:</span> {selectedBooking.package.name} · ${Number(selectedBooking.package.ratePerPax).toFixed(2)} / person</p>}
+                <p><span className="text-slate-500">Deposit required:</span> ${Number(selectedBooking.depositRequired).toFixed(2)}</p>
+                <p><span className="text-slate-500">Deposit paid:</span> ${Number(selectedBooking.depositPaid).toFixed(2)}</p>
+                <p className="font-semibold"><span className="text-slate-500">Total:</span> ${Number(selectedBooking.totalAmount).toFixed(2)}</p>
+                {selectedBooking.folioChargeLine && <p className="text-emerald-700">Billed to guest folio · ${Number(selectedBooking.folioChargeLine.amount).toFixed(2)}</p>}
+              </div>
+              <div className="space-y-2 sm:col-span-2">
+                <h3 className="font-semibold">Allocated resources</h3>
+                {selectedBooking.resources.length ? <ul className="divide-y rounded-lg border px-3">{selectedBooking.resources.map((allocation) => <li key={allocation.id} className="flex justify-between gap-3 py-2"><span>{allocation.resource.name} × {allocation.quantityAllocated}</span><span>${Number(allocation.subtotal).toFixed(2)}</span></li>)}</ul> : <p className="text-slate-500">No equipment or resources allocated.</p>}
+                <h3 className="pt-2 font-semibold">Linked guest</h3>
+                {selectedBooking.reservation ? <p>{selectedBooking.reservation.guest.firstName} {selectedBooking.reservation.guest.lastName} · Room {selectedBooking.reservation.room?.number ?? "not assigned"} · {selectedBooking.reservation.reservationNumber}</p> : <p className="text-slate-500">No in-house guest linked.</p>}
+              </div>
+            </div>
+          </section>
+        </div>
+      )}
       <p className="text-xs text-[hsl(var(--muted-foreground))] mt-4">Resources: {resources.map((r) => `${r.name} (${r.totalInventoryCount})`).join(" · ")}</p>
     </div>
   );

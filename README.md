@@ -96,6 +96,10 @@ The seed includes a local sample guest (`Development Guest`) and inspected rooms
 
 `npm run db:setup` generates the Prisma client, pushes the schema, and runs the sample-data seed. **The seed deletes and recreates application data. Use it only with a disposable local database; never point it at staging or production.**
 
+To add three months of sample reservations and folio activity without deleting existing records, run `npm run db:seed:three-months`. It uses deterministic demo reservation numbers, so rerunning it skips reservations already created by this seed.
+
+To import the November 2025 bar price list into the POS outlet labeled “Bar”, run `npm run db:import-bar-pricelist`. It updates matching sample prices, adds missing items, moves snacks to Bar and meal categories to the restaurant outlet, combines lunch and dinner as À la carte, and deactivates unmatched sample bar products while retaining their order history.
+
 For normal development, run the API and web with the commands above so both support hot reload. To run the API in Docker instead, first complete the database setup above, then use `docker compose up -d api`; run the web app separately with `npm run dev:web`.
 
 ```bash

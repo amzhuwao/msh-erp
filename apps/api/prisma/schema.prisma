@@ -14,7 +14,10 @@ model PropertyConfiguration {
   propertyName      String
   address           String
   vatNumber         String?
+  tinNumber         String?
   bpNumber          String?
+  vatRatePercent    Decimal  @default(15) @db.Decimal(5, 2)
+  ztaLevyRatePercent Decimal @default(2) @db.Decimal(5, 2)
   primaryCurrency   String   @default("USD")
   contactEmail      String?
   contactPhone      String?
@@ -673,6 +676,7 @@ model GroupReservation {
   invoices        GroupInvoice[]
   payments        GroupPayment[]
   reservations       Reservation[]
+  posOrders          PosOrder[]
   conferenceBookings ConferenceBooking[]
   createdAt          DateTime               @default(now())
   updatedAt          DateTime               @updatedAt
@@ -876,7 +880,11 @@ model PosOrder {
   paymentMethod   PosPaymentMethod?
   reservationId   String?
   reservation     Reservation?      @relation(fields: [reservationId], references: [id])
+  groupReservationId String?
+  groupReservation GroupReservation? @relation(fields: [groupReservationId], references: [id])
   roomNumber      String?
+  walkInGuestName String?
+  walkInGuestPhone String?
   closedAt        DateTime?
   items           PosOrderItem[]
   guestServiceOrder GuestServiceOrder?
@@ -886,6 +894,7 @@ model PosOrder {
 
   @@index([outletId])
   @@index([sessionId])
+  @@index([groupReservationId])
   @@index([status])
   @@map("pos_orders")
 }
@@ -1011,9 +1020,9 @@ model ConferenceVenue {
   id                   String              @id @default(cuid())
   name                 String              @unique
   locationDescription  String?
-  maxCapacityBanquet   Int
-  maxCapacityCinema    Int
-  maxCapacityBoardroom Int
+  maxCapacityChairsOnly   Int      @map("maxCapacityBanquet")
+  maxCapacityTracers      Int      @map("maxCapacityCinema")
+  maxCapacityRoundTables  Int      @map("maxCapacityBoardroom")
   halfDayRate          Decimal             @db.Decimal(10, 2)
   fullDayRate          Decimal             @db.Decimal(10, 2)
   isActive             Boolean             @default(true)

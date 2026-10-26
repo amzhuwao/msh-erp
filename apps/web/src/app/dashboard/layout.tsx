@@ -44,12 +44,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   if (!user) return null;
 
   return (
-    <div className="min-h-screen flex bg-[hsl(var(--background))]">
+    <div className="h-screen h-dvh flex overflow-hidden bg-[hsl(var(--background))]">
       <aside
-        className="w-64 shrink-0 flex flex-col text-[hsl(var(--sidebar-foreground))]"
+        className="h-screen h-dvh w-64 shrink-0 flex flex-col overflow-hidden text-[hsl(var(--sidebar-foreground))]"
         style={{ background: "hsl(var(--sidebar))" }}
       >
-        <div className="px-5 py-5 border-b border-[hsl(var(--sidebar-border))]">
+        <div className="shrink-0 px-5 py-5 border-b border-[hsl(var(--sidebar-border))]">
           <div className="flex items-center gap-3">
             <Image
               src="/logo.png"
@@ -69,7 +69,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
         </div>
 
-        <nav className="flex-1 py-4 space-y-0.5 overflow-y-auto">
+        <nav className="min-h-0 flex-1 py-4 space-y-0.5 overflow-y-auto overscroll-contain">
           {nav.map((item) => {
             const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
             return (
@@ -85,7 +85,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           })}
         </nav>
 
-        <div className="px-5 py-4 border-t border-[hsl(var(--sidebar-border))] text-sm">
+        <div className="shrink-0 px-5 py-4 border-t border-[hsl(var(--sidebar-border))] text-sm">
           <div className="text-[hsl(var(--primary-foreground))] font-medium truncate">{user.fullName}</div>
           <div className="text-[hsl(var(--sidebar-foreground))] text-xs mt-0.5 opacity-80">{user.roleName}</div>
           <button
@@ -100,7 +100,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
       </aside>
 
-      <main className="flex-1 overflow-auto min-h-screen">
+      <main className="h-screen h-dvh min-h-0 flex-1 overflow-y-auto overscroll-contain">
         <div className="border-b border-[hsl(var(--border))] bg-white/80 backdrop-blur-sm sticky top-0 z-10 px-6 py-3">
           <div className="text-xs text-[hsl(var(--muted-foreground))]">
             Manica Skyview Hotel · Mutare, Zimbabwe

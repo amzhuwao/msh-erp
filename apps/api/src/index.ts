@@ -31,6 +31,7 @@ import { reportsRouter } from "./routes/reports.routes.js";
 import { reservationsRouter } from "./routes/reservations.routes.js";
 import { revenueRouter } from "./routes/revenue.routes.js";
 import { roomsRouter } from "./routes/rooms.routes.js";
+import { initializeTaxRates } from "./lib/tax.js";
 
 const app = express();
 const port = Number(process.env.PORT ?? 3000);
@@ -86,6 +87,10 @@ app.use("/api/integrations", integrationsRouter);
 app.use(notFoundHandler);
 app.use(errorHandler);
 
-app.listen(port, host, () => {
-  console.log(`MSH ERP API listening on http://${host}:${port}`);
-});
+initializeTaxRates()
+  .catch((error) => console.error("Could not load configured tax rates; using defaults.", error))
+  .finally(() => {
+    app.listen(port, host, () => {
+      console.log(`MSH ERP API listening on http://${host}:${port}`);
+    });
+  });

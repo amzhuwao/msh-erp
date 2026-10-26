@@ -3,6 +3,7 @@ import { prisma } from "../lib/prisma.js";
 import { AppError } from "../lib/errors.js";
 import { nextDocumentNumber, writeAuditLog } from "./system.service.js";
 import { taxFieldsForCharge } from "../lib/tax.js";
+import { getProperty, paymentInstructions } from "../lib/property.js";
 
 export async function listVenues() {
   return prisma.conferenceVenue.findMany({
@@ -20,9 +21,9 @@ export async function getVenue(id: string) {
 export async function createVenue(input: {
   name: string;
   locationDescription?: string | null;
-  maxCapacityBanquet: number;
-  maxCapacityCinema: number;
-  maxCapacityBoardroom: number;
+  maxCapacityChairsOnly: number;
+  maxCapacityTracers: number;
+  maxCapacityRoundTables: number;
   halfDayRate: number;
   fullDayRate: number;
   userId: string;
@@ -31,9 +32,9 @@ export async function createVenue(input: {
     data: {
       name: input.name.trim(),
       locationDescription: input.locationDescription?.trim() || null,
-      maxCapacityBanquet: input.maxCapacityBanquet,
-      maxCapacityCinema: input.maxCapacityCinema,
-      maxCapacityBoardroom: input.maxCapacityBoardroom,
+      maxCapacityChairsOnly: input.maxCapacityChairsOnly,
+      maxCapacityTracers: input.maxCapacityTracers,
+      maxCapacityRoundTables: input.maxCapacityRoundTables,
       halfDayRate: input.halfDayRate,
       fullDayRate: input.fullDayRate,
     },
@@ -46,9 +47,9 @@ export async function createVenue(input: {
 export async function updateVenue(id: string, input: {
   name?: string;
   locationDescription?: string | null;
-  maxCapacityBanquet?: number;
-  maxCapacityCinema?: number;
-  maxCapacityBoardroom?: number;
+  maxCapacityChairsOnly?: number;
+  maxCapacityTracers?: number;
+  maxCapacityRoundTables?: number;
   halfDayRate?: number;
   fullDayRate?: number;
   isActive?: boolean;
@@ -61,9 +62,9 @@ export async function updateVenue(id: string, input: {
     data: {
       name: input.name?.trim(),
       locationDescription: input.locationDescription === undefined ? undefined : input.locationDescription?.trim() || null,
-      maxCapacityBanquet: input.maxCapacityBanquet,
-      maxCapacityCinema: input.maxCapacityCinema,
-      maxCapacityBoardroom: input.maxCapacityBoardroom,
+      maxCapacityChairsOnly: input.maxCapacityChairsOnly,
+      maxCapacityTracers: input.maxCapacityTracers,
+      maxCapacityRoundTables: input.maxCapacityRoundTables,
       halfDayRate: input.halfDayRate,
       fullDayRate: input.fullDayRate,
       isActive: input.isActive,
@@ -101,6 +102,105 @@ export async function listBookings() {
     orderBy: { startTimestamp: "asc" },
     take: 100,
   });
+}
+
+export async function buildConferenceProformaDocument(id: string) {
+  const booking = await prisma.conferenceBooking.findUnique({
+    where: { id },
+    include: {
+      venue: true,
+      package: true,
+      company: true,
+      groupReservation: { include: { company: true } },
+      reservation: { include: { guest: true, room: { include: { roomType: true } } } },
+      resources: { include: { resource: true } },
+    },
+  });
+  if (!booking) throw new AppError(404, "EVT-004", "Booking not found");
+
+  const property = await getProperty();
+  const resourceTotal = booking.resources.reduce((sum, allocation) => sum + Number(allocation.subtotal), 0);
+  const packageAmount = booking.package ? Number(booking.package.ratePerPax) * booking.estimatedPax : 0;
+  const otherAmount = Number(booking.totalAmount) - Number(booking.baseVenueCost) - packageAmount - resourceTotal;
+  const items = [
+    { description: `Venue hire · ${booking.venue.name}`, amount: Number(booking.baseVenueCost) },
+    ...(packageAmount > 0 && booking.package ? [{ description: `${booking.package.name} · ${booking.estimatedPax} attendees`, amount: packageAmount }] : []),
+    ...booking.resources.map((allocation) => ({
+      description: `${allocation.resource.name} · quantity ${allocation.quantityAllocated}`,
+      amount: Number(allocation.subtotal),
+    })),
+    ...(Math.abs(otherAmount) > 0.01 ? [{ description: "Other conference charges", amount: otherAmount }] : []),
+  ].filter((item) => item.amount > 0);
+
+  const lines = items.map((item) => {
+    const tax = taxFieldsForCharge({ amount: item.amount, department: "CONFERENCE" });
+    return {
+      description: item.description,
+      department: tax.department,
+      net: tax.netAmount,
+      vat: tax.vatAmount,
+      levy: tax.levyAmount,
+      gross: tax.amount,
+      date: booking.startTimestamp,
+    };
+  });
+  const taxSummary = {
+    net: lines.reduce((sum, line) => sum + line.net, 0),
+    vat: lines.reduce((sum, line) => sum + line.vat, 0),
+    levy: lines.reduce((sum, line) => sum + line.levy, 0),
+    gross: lines.reduce((sum, line) => sum + line.gross, 0),
+  };
+  const organization = booking.company?.companyName
+    ?? booking.groupReservation?.company?.companyName
+    ?? booking.groupReservation?.groupName
+    ?? null;
+  const guestName = booking.reservation
+    ? `${booking.reservation.guest.firstName} ${booking.reservation.guest.lastName}`
+    : booking.contactName;
+
+  return {
+    type: "proforma",
+    documentTitle: "PRO FORMA INVOICE",
+    documentNumber: `PF-${booking.bookingNumber}`,
+    issuedAt: new Date().toISOString(),
+    property: {
+      name: property.propertyName,
+      address: property.address,
+      vatNumber: property.vatNumber,
+      tinNumber: property.tinNumber,
+      bpNumber: property.bpNumber,
+      ztaLevyRatePercent: Number(property.ztaLevyRatePercent),
+      phone: property.contactPhone,
+      netoneNumber: property.netoneNumber,
+      whatsappNumber: property.whatsappNumber,
+      email: property.contactEmail,
+    },
+    guest: {
+      name: guestName,
+      email: booking.reservation?.guest.email ?? null,
+      phone: booking.reservation?.guest.phone ?? null,
+      nationality: booking.reservation?.guest.nationality ?? null,
+      nationalId: booking.reservation?.guest.nationalId ?? null,
+      address: booking.reservation?.guest.address ?? null,
+      organization,
+    },
+    stay: {
+      room: booking.reservation?.room?.number ?? null,
+      roomType: booking.reservation?.room?.roomType.name ?? `Conference · ${booking.venue.name}`,
+      checkIn: booking.reservation?.checkInDate ?? null,
+      checkOut: booking.reservation?.checkOutDate ?? null,
+      eventStart: booking.startTimestamp,
+      eventEnd: booking.endTimestamp,
+    },
+    lines,
+    payments: Number(booking.depositPaid) > 0
+      ? [{ description: "Conference deposit received", method: null, amount: Number(booking.depositPaid), date: booking.updatedAt }]
+      : [],
+    taxSummary,
+    balance: taxSummary.gross - Number(booking.depositPaid),
+    services: [],
+    paymentInstructions: paymentInstructions(property),
+  };
 }
 
 export async function listInHouseReservations() {

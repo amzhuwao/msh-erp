@@ -14,6 +14,13 @@ import {
   createServiceCatalogItem,
   createVenue,
   deleteVenue,
+  deleteRoom,
+  deleteRoomType,
+  deletePackage,
+  deleteResource,
+  deleteOutlet,
+  deleteMenuItem,
+  deleteServiceCatalogItem,
   listMenuItemsAdmin,
   listOutletsAdmin,
   listPackagesAdmin,
@@ -66,6 +73,10 @@ catalogRouter.put("/room-types/:id", authorize("Reservations", "EDIT"), asyncHan
   res.json(await updateRoomType(paramId(req.params.id), { ...body, userId: req.user!.id }));
 }));
 
+catalogRouter.delete("/room-types/:id", authorize("Reservations", "DELETE"), asyncHandler(async (req, res) => {
+  res.json(await deleteRoomType(paramId(req.params.id), req.user!.id));
+}));
+
 catalogRouter.post("/rate-plans", authorize("Revenue", "CREATE"), asyncHandler(async (req, res) => {
   const body = validateBody(z.object({
     code: z.string().min(1),
@@ -114,6 +125,10 @@ catalogRouter.put("/rooms/:id", authorize("Reservations", "EDIT"), asyncHandler(
   res.json(await updateRoom(paramId(req.params.id), { ...body, userId: req.user!.id }));
 }));
 
+catalogRouter.delete("/rooms/:id", authorize("Reservations", "DELETE"), asyncHandler(async (req, res) => {
+  res.json(await deleteRoom(paramId(req.params.id), req.user!.id));
+}));
+
 catalogRouter.get("/venues", authorize("Conference", "VIEW"), asyncHandler(async (_req, res) => {
   res.json({ items: await listVenuesAdmin() });
 }));
@@ -122,9 +137,9 @@ catalogRouter.post("/venues", authorize("Conference", "CREATE"), asyncHandler(as
   const body = validateBody(z.object({
     name: z.string().trim().min(1),
     locationDescription: z.string().optional(),
-    maxCapacityBanquet: z.coerce.number().int().min(1),
-    maxCapacityCinema: z.coerce.number().int().min(1),
-    maxCapacityBoardroom: z.coerce.number().int().min(1),
+    maxCapacityChairsOnly: z.coerce.number().int().min(1),
+    maxCapacityTracers: z.coerce.number().int().min(1),
+    maxCapacityRoundTables: z.coerce.number().int().min(1),
     halfDayRate: money,
     fullDayRate: money,
     isActive: bool,
@@ -136,9 +151,9 @@ catalogRouter.put("/venues/:id", authorize("Conference", "EDIT"), asyncHandler(a
   const body = validateBody(z.object({
     name: z.string().trim().min(1).optional(),
     locationDescription: z.string().optional(),
-    maxCapacityBanquet: z.coerce.number().int().min(1).optional(),
-    maxCapacityCinema: z.coerce.number().int().min(1).optional(),
-    maxCapacityBoardroom: z.coerce.number().int().min(1).optional(),
+    maxCapacityChairsOnly: z.coerce.number().int().min(1).optional(),
+    maxCapacityTracers: z.coerce.number().int().min(1).optional(),
+    maxCapacityRoundTables: z.coerce.number().int().min(1).optional(),
     halfDayRate: money.optional(),
     fullDayRate: money.optional(),
     isActive: bool,
@@ -176,6 +191,10 @@ catalogRouter.put("/packages/:id", authorize("Conference", "EDIT"), asyncHandler
   res.json(await updatePackage(paramId(req.params.id), { ...body, userId: req.user!.id }));
 }));
 
+catalogRouter.delete("/packages/:id", authorize("Conference", "DELETE"), asyncHandler(async (req, res) => {
+  res.json(await deletePackage(paramId(req.params.id), req.user!.id));
+}));
+
 catalogRouter.get("/resources", authorize("Conference", "VIEW"), asyncHandler(async (_req, res) => {
   res.json({ items: await listResourcesAdmin() });
 }));
@@ -200,6 +219,10 @@ catalogRouter.put("/resources/:id", authorize("Conference", "EDIT"), asyncHandle
   res.json(await updateResource(paramId(req.params.id), { ...body, userId: req.user!.id }));
 }));
 
+catalogRouter.delete("/resources/:id", authorize("Conference", "DELETE"), asyncHandler(async (req, res) => {
+  res.json(await deleteResource(paramId(req.params.id), req.user!.id));
+}));
+
 catalogRouter.get("/outlets", authorize("POS", "VIEW"), asyncHandler(async (_req, res) => {
   res.json({ items: await listOutletsAdmin() });
 }));
@@ -219,6 +242,10 @@ catalogRouter.put("/outlets/:id", authorize("POS", "EDIT"), asyncHandler(async (
     isActive: bool,
   }), req);
   res.json(await updateOutlet(paramId(req.params.id), { ...body, userId: req.user!.id }));
+}));
+
+catalogRouter.delete("/outlets/:id", authorize("POS", "DELETE"), asyncHandler(async (req, res) => {
+  res.json(await deleteOutlet(paramId(req.params.id), req.user!.id));
 }));
 
 catalogRouter.get("/menu-items", authorize("POS", "VIEW"), asyncHandler(async (req, res) => {
@@ -255,6 +282,10 @@ catalogRouter.put("/menu-items/:id", authorize("POS", "EDIT"), asyncHandler(asyn
   res.json(await updateMenuItem(paramId(req.params.id), { ...body, userId: req.user!.id }));
 }));
 
+catalogRouter.delete("/menu-items/:id", authorize("POS", "DELETE"), asyncHandler(async (req, res) => {
+  res.json(await deleteMenuItem(paramId(req.params.id), req.user!.id));
+}));
+
 catalogRouter.get("/service-items", authorize("GuestServices", "VIEW"), asyncHandler(async (_req, res) => {
   res.json({ items: await listServiceCatalogAdmin() });
 }));
@@ -282,4 +313,8 @@ catalogRouter.put("/service-items/:id", authorize("GuestServices", "EDIT"), asyn
     isActive: bool,
   }), req);
   res.json(await updateServiceCatalogItem(paramId(req.params.id), { ...body, userId: req.user!.id }));
+}));
+
+catalogRouter.delete("/service-items/:id", authorize("GuestServices", "DELETE"), asyncHandler(async (req, res) => {
+  res.json(await deleteServiceCatalogItem(paramId(req.params.id), req.user!.id));
 }));

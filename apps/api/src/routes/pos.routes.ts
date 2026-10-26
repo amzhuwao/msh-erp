@@ -49,6 +49,8 @@ posRouter.post(
         outletId: z.string(),
         sessionId: z.string().optional(),
         tableNumber: z.string().optional(),
+        walkInGuestName: z.string().max(160).optional(),
+        walkInGuestPhone: z.string().max(40).optional(),
         items: z.array(
           z.object({
             menuItemId: z.string(),
@@ -76,6 +78,7 @@ posRouter.post(
       z.object({
         paymentMethod: z.enum(["CASH", "CARD", "MOBILE", "ROOM_CHARGE", "BANK_TRANSFER", "ECOCASH", "ONEMONEY"]),
         roomNumber: z.string().optional(),
+        billTo: z.enum(["ROOM", "GROUP"]).optional(),
       }),
       req,
     );
@@ -83,6 +86,7 @@ posRouter.post(
       orderId: paramId(req.params.id),
       paymentMethod: body.paymentMethod as PosPaymentMethod,
       roomNumber: body.roomNumber,
+      billTo: body.billTo,
       userId: req.user!.id,
       ipAddress: getClientIp(req),
     });
@@ -94,8 +98,8 @@ posRouter.post(
   "/room-charge-validate",
   authorize("POS", "VIEW"),
   asyncHandler(async (req, res) => {
-    const body = validateBody(z.object({ roomNumber: z.string().min(1) }), req);
-    res.json(await validateRoomCharge(body.roomNumber));
+    const body = validateBody(z.object({ roomNumber: z.string().min(1), billTo: z.enum(["ROOM", "GROUP"]).optional() }), req);
+    res.json(await validateRoomCharge(body.roomNumber, body.billTo));
   }),
 );
 
@@ -103,8 +107,8 @@ posRouter.post(
   "/orders/:id/room-charge-validate",
   authorize("POS", "VIEW"),
   asyncHandler(async (req, res) => {
-    const body = validateBody(z.object({ roomNumber: z.string().min(1) }), req);
-    res.json(await validateRoomCharge(body.roomNumber));
+    const body = validateBody(z.object({ roomNumber: z.string().min(1), billTo: z.enum(["ROOM", "GROUP"]).optional() }), req);
+    res.json(await validateRoomCharge(body.roomNumber, body.billTo));
   }),
 );
 

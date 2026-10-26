@@ -9,6 +9,8 @@ import {
   cancelReservation,
   checkInReservation,
   createReservation,
+  moveReservation,
+  updateReservation,
   recheckInReservation,
   searchAvailability,
 } from "../services/reservation.service.js";
@@ -38,6 +40,16 @@ const createReservationSchema = z.object({
   source: z.enum(["WALK_IN", "PHONE", "ONLINE", "OTA", "AGENT", "GROUP"]).optional(),
 });
 
+const updateReservationSchema = z.object({
+  guestId: z.string().min(1).optional(),
+  roomId: z.string().nullable().optional(),
+  checkInDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  checkOutDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  adults: z.number().int().min(1).optional(),
+  children: z.number().int().min(0).optional(),
+  specialRequests: z.string().nullable().optional(),
+});
+
 const checkInSchema = z.object({
   roomId: z.string().min(1),
   nationality: z.string().optional(),
@@ -51,6 +63,7 @@ const cancelSchema = z.object({
 
 const listQuerySchema = z.object({
   status: z.string().optional(),
+  search: z.string().trim().optional(),
   checkInFrom: z.string().optional(),
   checkInTo: z.string().optional(),
   page: z.coerce.number().int().min(1).default(1),
@@ -79,6 +92,13 @@ reservationsRouter.get(
     if (query.status) {
       where.status = query.status;
     }
+    if (query.search) {
+      where.OR = [
+        { reservationNumber: { contains: query.search, mode: "insensitive" } },
+        { guest: { firstName: { contains: query.search, mode: "insensitive" } } },
+        { guest: { lastName: { contains: query.search, mode: "insensitive" } } },
+      ];
+    }
     if (query.checkInFrom || query.checkInTo) {
       where.checkInDate = {
         gte: query.checkInFrom ? new Date(query.checkInFrom) : undefined,
@@ -93,6 +113,7 @@ reservationsRouter.get(
           guest: true,
           room: { include: { roomType: true } },
           ratePlan: { include: { roomType: true } },
+          folios: { select: { id: true, lines: { select: { lineType: true, amount: true } } } },
           guestServiceOrders: true,
         },
         orderBy: { checkInDate: "asc" },
@@ -145,6 +166,39 @@ reservationsRouter.post(
   }),
 );
 
+reservationsRouter.patch(
+  "/:id",
+  authorize("Reservations", "EDIT"),
+  asyncHandler(async (req, res) => {
+    const body = validateBody(updateReservationSchema, req);
+    const reservation = await updateReservation({
+      reservationId: paramId(req.params.id),
+      ...body,
+      userId: req.user!.id,
+      ipAddress: getClientIp(req),
+    });
+    res.json(reservation);
+  }),
+);
+
+reservationsRouter.patch(
+  "/:id/tape-chart-move",
+  authorize("Reservations", "EDIT"),
+  asyncHandler(async (req, res) => {
+    const body = validateBody(z.object({
+      roomId: z.string().min(1),
+      checkInDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    }), req);
+    const reservation = await moveReservation({
+      reservationId: paramId(req.params.id),
+      ...body,
+      userId: req.user!.id,
+      ipAddress: getClientIp(req),
+    });
+    res.json(reservation);
+  }),
+);
+
 reservationsRouter.post(
   "/:id/checkin",
   authorize("Reservations", "EDIT"),
@@ -185,6 +239,21 @@ reservationsRouter.post(
       ipAddress: getClientIp(req),
     });
     res.json(reservation);
+  }),
+);
+
+reservationsRouter.get(
+  "/:id/proforma",
+  authorize("Reservations", "VIEW"),
+  asyncHandler(async (req, res) => {
+    const reservation = await prisma.reservation.findUnique({
+      where: { id: paramId(req.params.id) },
+      include: { folios: { select: { id: true }, take: 1 } },
+    });
+    if (!reservation?.folios[0]) {
+      throw new AppError(404, "RES-006", "Reservation not found");
+    }
+    res.json(await buildFolioDocument(reservation.folios[0].id, "proforma"));
   }),
 );
 

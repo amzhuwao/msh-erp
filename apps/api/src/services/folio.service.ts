@@ -28,6 +28,8 @@ export async function getFolioWithBalance(folioId: string) {
         include: {
           room: { include: { roomType: true } },
           ratePlan: { include: { roomType: true } },
+          corporateCompany: true,
+          groupReservation: { include: { company: true } },
           guestServiceOrders: { include: { catalogItem: true } },
           posOrders: { where: { guestServiceOrder: null }, include: { items: { include: { menuItem: true } }, outlet: true } },
         },
@@ -124,20 +126,36 @@ export async function postFolioPayment(input: {
     throw new AppError(400, "FOL-002", "Cannot post payments to a closed folio");
   }
 
-  const line = await prisma.folioLine.create({
-    data: {
-      folioId: input.folioId,
-      lineType: FolioLineType.PAYMENT,
-      description: input.description,
-      amount: input.amount,
-      department: "OTHER",
-      taxRate: 0,
-      netAmount: 0,
-      vatAmount: 0,
-      levyAmount: 0,
-      paymentMethod: input.paymentMethod ?? inferPaymentMethod(input.description),
-      postedById: input.userId,
-    },
+  const line = await prisma.$transaction(async (tx) => {
+    const payment = await tx.folioLine.create({
+      data: {
+        folioId: input.folioId,
+        lineType: FolioLineType.PAYMENT,
+        description: input.description,
+        amount: input.amount,
+        department: "OTHER",
+        taxRate: 0,
+        netAmount: 0,
+        vatAmount: 0,
+        levyAmount: 0,
+        paymentMethod: input.paymentMethod ?? inferPaymentMethod(input.description),
+        postedById: input.userId,
+      },
+    });
+    const reservation = await tx.reservation.findUnique({ where: { id: folio.reservationId } });
+    if (reservation?.status === ReservationStatus.TENTATIVE) {
+      await tx.reservation.update({ where: { id: reservation.id }, data: { status: ReservationStatus.CONFIRMED } });
+      await tx.reservationStatusHistory.create({
+        data: {
+          reservationId: reservation.id,
+          oldStatus: ReservationStatus.TENTATIVE,
+          newStatus: ReservationStatus.CONFIRMED,
+          changedById: input.userId,
+          changeReason: "Payment recorded",
+        },
+      });
+    }
+    return payment;
   });
 
   await writeAuditLog({
@@ -424,13 +442,15 @@ function inferPaymentMethod(description: string): string {
   return "CASH";
 }
 
-export async function buildFolioDocument(folioId: string, type: "invoice" | "receipt" | "quote") {
+export async function buildFolioDocument(folioId: string, type: "invoice" | "receipt" | "quote" | "proforma") {
   const folio = await getFolioWithBalance(folioId);
   const property = await getProperty();
   const charges = folio.lines.filter((l) => l.lineType !== "PAYMENT");
   const payments = folio.lines.filter((l) => l.lineType === "PAYMENT");
 
-  let documentNumber = type === "quote" ? `QT-${folio.id.slice(-6).toUpperCase()}` : folio.invoiceNumber;
+  let documentNumber = type === "proforma"
+    ? `PF-${folio.reservation.reservationNumber}`
+    : type === "quote" ? `QT-${folio.id.slice(-6).toUpperCase()}` : folio.invoiceNumber;
   if (type === "invoice" && !folio.invoiceNumber) {
     documentNumber = await nextDocumentNumber("INVOICES");
     await prisma.folio.update({ where: { id: folioId }, data: { invoiceNumber: documentNumber } });
@@ -460,16 +480,58 @@ export async function buildFolioDocument(folioId: string, type: "invoice" | "rec
     })),
   ];
 
+  const documentLines = charges.map((l) => ({
+    description: l.description,
+    department: l.department,
+    net: Number(l.netAmount),
+    vat: Number(l.vatAmount),
+    levy: Number(l.levyAmount),
+    gross: Number(l.amount),
+    date: l.createdAt,
+  }));
+  if (type === "proforma") {
+    const start = new Date(folio.reservation.checkInDate);
+    const end = new Date(folio.reservation.checkOutDate);
+    const stayNights = Math.max(0, Math.round((Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate()) - Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate())) / 86_400_000));
+    const postedRoomNights = charges.filter((line) => line.description.startsWith("Room charge — ")).length;
+    const projectedNights = Math.max(0, stayNights - postedRoomNights);
+    if (projectedNights > 0) {
+      const nightlyRate = Number(folio.reservation.contractedRate ?? folio.reservation.ratePlan.baseRate);
+      const estimate = taxFieldsForCharge({ amount: nightlyRate * projectedNights, department: "ROOMS" });
+      documentLines.push({
+        description: `Projected accommodation · ${projectedNights} remaining night${projectedNights === 1 ? "" : "s"}`,
+        department: estimate.department,
+        net: estimate.netAmount,
+        vat: estimate.vatAmount,
+        levy: estimate.levyAmount,
+        gross: estimate.amount,
+        date: new Date(),
+      });
+    }
+  }
+
+  const proformaSummary = type === "proforma" ? {
+    net: documentLines.reduce((sum, line) => sum + line.net, 0),
+    vat: documentLines.reduce((sum, line) => sum + line.vat, 0),
+    levy: documentLines.reduce((sum, line) => sum + line.levy, 0),
+    gross: documentLines.reduce((sum, line) => sum + line.gross, 0),
+  } : folio.taxSummary;
+  const documentBalance = type === "proforma"
+    ? proformaSummary.gross - payments.reduce((sum, line) => sum + Number(line.amount), 0)
+    : folio.balance;
+
   return {
     type,
-    documentTitle: type === "invoice" ? "TAX INVOICE" : type === "receipt" ? "RECEIPT" : "QUOTATION",
+    documentTitle: type === "invoice" ? "TAX INVOICE" : type === "receipt" ? "RECEIPT" : type === "proforma" ? "PRO FORMA INVOICE" : "QUOTATION",
     documentNumber,
     issuedAt: new Date().toISOString(),
     property: {
       name: property.propertyName,
       address: property.address,
       vatNumber: property.vatNumber,
+      tinNumber: property.tinNumber,
       bpNumber: property.bpNumber,
+      ztaLevyRatePercent: Number(property.ztaLevyRatePercent),
       phone: property.contactPhone,
       netoneNumber: property.netoneNumber,
       whatsappNumber: property.whatsappNumber,
@@ -481,30 +543,29 @@ export async function buildFolioDocument(folioId: string, type: "invoice" | "rec
       phone: folio.guest.phone,
       nationality: folio.guest.nationality,
       nationalId: folio.guest.nationalId,
+      address: folio.guest.address,
       passportNumber: folio.guest.passportNumber,
+      organization: folio.reservation.corporateCompany?.companyName
+        ?? folio.reservation.groupReservation?.company?.companyName
+        ?? folio.reservation.groupReservation?.groupName
+        ?? folio.guest.companyName,
     },
     stay: {
       room: folio.reservation.room?.number ?? null,
       roomType: folio.reservation.room?.roomType?.name ?? folio.reservation.ratePlan.roomType.name,
+      checkIn: folio.reservation.checkInDate,
+      checkOut: folio.reservation.checkOutDate,
     },
     reservation: folio.reservation,
-    lines: charges.map((l) => ({
-      description: l.description,
-      department: l.department,
-      net: Number(l.netAmount),
-      vat: Number(l.vatAmount),
-      levy: Number(l.levyAmount),
-      gross: Number(l.amount),
-      date: l.createdAt,
-    })),
+    lines: documentLines,
     payments: payments.map((l) => ({
       description: l.description,
       method: l.paymentMethod,
       amount: Number(l.amount),
       date: l.createdAt,
     })),
-    taxSummary: folio.taxSummary,
-    balance: folio.balance,
+    taxSummary: proformaSummary,
+    balance: documentBalance,
     services,
     paymentInstructions: paymentInstructions(property),
   };

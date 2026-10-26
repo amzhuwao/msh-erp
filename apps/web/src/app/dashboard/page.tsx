@@ -10,6 +10,7 @@ import { AvailabilitySearch } from "@/components/AvailabilitySearch";
 import { GuestRegisterTab } from "@/components/GuestRegisterTab";
 import { RecheckInTab } from "@/components/RecheckInTab";
 import { ReservationCreateTab } from "@/components/ReservationCreateTab";
+import { ReservationsTab } from "@/components/ReservationsTab";
 import { PageHeader } from "@/components/ui/PageHeader";
 
 interface DashboardStats {
@@ -28,7 +29,7 @@ interface OverdueServiceAlert {
   specialInstructions: string | null;
 }
 
-const tabs = ["Tape Chart", "Arrivals", "Departures", "In-House", "Recheck-in", "Register", "New Reservation", "Availability"] as const;
+const tabs = ["Tape Chart", "Reservations", "Arrivals", "Departures", "In-House", "Recheck-in", "Register", "New Reservation", "Availability"] as const;
 
 export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState<(typeof tabs)[number]>("Tape Chart");
@@ -91,6 +92,7 @@ export default function DashboardPage() {
 
       <div className="msh-card p-4 md:p-5 min-h-[480px]">
         {activeTab === "Tape Chart" && <TapeChart />}
+        {activeTab === "Reservations" && <ReservationsTab />}
         {activeTab === "Arrivals" && <ArrivalsTab />}
         {activeTab === "Departures" && <DeparturesTab />}
         {activeTab === "In-House" && <InHouseTab />}

@@ -1,7 +1,22 @@
 import { AppError } from "./errors.js";
+import { prisma } from "./prisma.js";
 
-export const VAT_RATE = 0.15;
-export const ZTA_LEVY_RATE = 0.02;
+export let VAT_RATE = 0.15;
+export let ZTA_LEVY_RATE = 0.02;
+
+export function setTaxRates(vatRatePercent: number, ztaLevyRatePercent: number) {
+  VAT_RATE = vatRatePercent / 100;
+  ZTA_LEVY_RATE = ztaLevyRatePercent / 100;
+}
+
+export async function initializeTaxRates() {
+  const property = await prisma.propertyConfiguration.findFirst({
+    select: { vatRatePercent: true, ztaLevyRatePercent: true },
+  });
+  if (property) {
+    setTaxRates(Number(property.vatRatePercent), Number(property.ztaLevyRatePercent));
+  }
+}
 
 export type ChargeDepartment = "ROOMS" | "RESTAURANT" | "BAR" | "CONFERENCE" | "SERVICES" | "OTHER";
 

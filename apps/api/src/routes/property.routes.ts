@@ -3,6 +3,7 @@ import { prisma } from "../lib/prisma.js";
 import { authenticate, authorize } from "../middleware/auth.js";
 import { asyncHandler } from "../middleware/http.js";
 import { utcToday } from "../lib/tax.js";
+import { setTaxRates } from "../lib/tax.js";
 
 export const propertyRouter = Router();
 
@@ -10,7 +11,8 @@ propertyRouter.get(
   "/",
   asyncHandler(async (_req, res) => {
     const property = await prisma.propertyConfiguration.findFirst();
-    res.json(property ?? { propertyName: "Manica Skyview Hotel" });
+    if (property) setTaxRates(Number(property.vatRatePercent), Number(property.ztaLevyRatePercent));
+    res.json(property ?? { propertyName: "Manica Skyview Hotel", vatRatePercent: 15, ztaLevyRatePercent: 2 });
   }),
 );
 
@@ -81,21 +83,24 @@ propertyRouter.put(
     const { validateBody } = await import("../middleware/http.js");
     const body = validateBody(z.object({
       address: z.string().optional(),
-      vatNumber: z.string().optional(),
-      bpNumber: z.string().optional(),
-      contactEmail: z.string().optional(),
-      contactPhone: z.string().optional(),
-      netoneNumber: z.string().optional(),
-      whatsappNumber: z.string().optional(),
-      receptionEmail: z.string().optional(),
-      bankName: z.string().optional(),
-      bankBranch: z.string().optional(),
-      bankAccountName: z.string().optional(),
-      bankAccountNumber: z.string().optional(),
-      bankSwiftCode: z.string().optional(),
-      ecocashNumber: z.string().optional(),
-      ecocashMerchant: z.string().optional(),
-      onemoneyNumber: z.string().optional(),
+      vatNumber: z.string().nullable().optional(),
+      tinNumber: z.string().nullable().optional(),
+      bpNumber: z.string().nullable().optional(),
+      vatRatePercent: z.number().finite().min(0).max(100).optional(),
+      ztaLevyRatePercent: z.number().finite().min(0).max(100).optional(),
+      contactEmail: z.string().nullable().optional(),
+      contactPhone: z.string().nullable().optional(),
+      netoneNumber: z.string().nullable().optional(),
+      whatsappNumber: z.string().nullable().optional(),
+      receptionEmail: z.string().nullable().optional(),
+      bankName: z.string().nullable().optional(),
+      bankBranch: z.string().nullable().optional(),
+      bankAccountName: z.string().nullable().optional(),
+      bankAccountNumber: z.string().nullable().optional(),
+      bankSwiftCode: z.string().nullable().optional(),
+      ecocashNumber: z.string().nullable().optional(),
+      ecocashMerchant: z.string().nullable().optional(),
+      onemoneyNumber: z.string().nullable().optional(),
     }), req);
     const existing = await prisma.propertyConfiguration.findFirst();
     if (!existing) {
@@ -103,6 +108,7 @@ propertyRouter.put(
       return;
     }
     const updated = await prisma.propertyConfiguration.update({ where: { id: existing.id }, data: body });
+    setTaxRates(Number(updated.vatRatePercent), Number(updated.ztaLevyRatePercent));
     res.json(updated);
   }),
 );
